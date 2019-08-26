@@ -1,0 +1,39 @@
+/**
+ * \mainpage
+ *
+ * The implementation of the algorithms is in the root directory. The directory `gui` contains the code for the GUI.
+ *
+ * The various steps of the algorithm (as displayed in the progress window of the GUI) are implemented in various classes. The starting point to figuring out how the implementation is structured, would be to look at the implementation of the command-line interface in `riverapp.cpp`. (The GUI implementation is very similar, but it is more complicated to read because of the interspersed GUI code.) Alternatively, read the following section for an overview.
+ *
+ * ## Overview
+ *
+ * Here is a high-level overview of the entire process of computing a network.
+ *
+ * * The first step is to make an \c InputGraph, which is simply a graph structure that represents our terrain. An \c InputGraph can be obtained from a \c HeightMap (which is simply a wrapper around a \c QImage); this simply creates a regular triangulated grid.
+ *
+ * * Then we convert the \c InputGraph into an \c InputDcel. A DCEL is a data structure to store a mesh, which is easier to deal with than a plain graph representation. The class \c Dcel is a generic implementation of a DCEL. \c InputDcel is a subclass of \c Dcel that stores the additional information (like coordinates and height values) that we need. If the terrain contains monkey saddles we need to remove those at this stage (`InputDcel::splitMonkeySaddles()`).
+ *
+ * * Now we compute a Morse-Smale complex (\c MsComplex) from the DCEL, using the \c MsComplexCreator. (Creating a MS-complex is done in a separate class, so we can easily get progress information for in the GUI.) Just like \c InputDcel, \c MsComplex is a subclass of \c Dcel. The vertices of the \MsComplex are critical points (minima and saddles), the edges are steepest-descending paths and the faces are the areas in between. An \c MsComplex stores with every edge the steepest-descending path it represents as a sequence of edges in the underlying \c InputDcel.
+ *
+ * At this point, we can do two things, depending on which algorithm we want to execute.
+ *
+ * ### Striation-based algorithm
+ *
+ * * We compute a \c Striation from the \c MsComplex using the \c StriationCreator.
+ *
+ * * We sort the striation paths on height using the \c SortedPathsCreator. In the remainder of the algorithm, we need to compute many sand function values between striation paths. Therefore, we initialize a \c SandCache, that acts as a proxy.
+ *
+ * * Using those, we run the greedy algorithm to create a \c Network using the \c NetworkCreator. A \c Network is just a set of source-to-sink paths.
+ *
+ * * We finally figure out which parts of these paths are overlapping, and extract the graph structure. This is called a \c NetworkGraph; it can be computed using the \c NetworkGraphCreator. This is the final output that is shown in the GUI or written to a file.
+ *
+ * ### Volume-persistence-based algorithm
+ *
+ * * This algorithm is based on simplifying the \c MsComplex based on volume. This is done by the \c MsComplexSimplifier. The process works by iteratively selecting saddles to merge, and removing all of their adjacent edges except one. (The DCEL needs to stay connected, so we cannot just remove everything.) Afterwards we remove all degree-1 vertices. Then we compact the \c MsComplex (\c MsComplex::compact()) to actually get rid of the deleted elements (DCEL deletion works by just removing all pointers to elements; compacting actually gets rid of the removed elements).
+ *
+ * * Finally we extract the graph structure from the \c MsComplex into a \c NetworkGraph; this can be done using the \c MsToNetworkGraphCreator.
+ * 
+ * ## Height values
+ *
+ * Throughout the implementation, height values are represented as integers between 0 and 2^24 - 1. This is done so that they can be read from and written to image files easily.
+ */
