@@ -1,5 +1,7 @@
-TTGA -- Topological Tools for Geomorphological Analysis
+TTGA: Topological Tools for Geomorphological Analysis
 =======================================================
+
+[![DOI](https://zenodo.org/badge/204456296.svg)](https://zenodo.org/badge/latestdoi/204456296)
 
 TTGA is a tool which helps the analysis of river systems, in particular, braided rivers and estuaries. The focus of the tool is the computation of river networks from a digital elevation model (DEM) of the river bed. Such a river network can then be used as input for further analyses, such as computing the length or average elevation of channels.
 
