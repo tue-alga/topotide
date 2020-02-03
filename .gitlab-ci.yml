@@ -1,4 +1,7 @@
-image: cm0x4d/ubuntu-qt5-cmake
+image: theshadowx/qt5
+
+before_script:
+  - apt install -y cmake
 
 stages:
   - build

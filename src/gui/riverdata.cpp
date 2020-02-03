@@ -6,7 +6,8 @@
 
 RiverData::RiverData() = default;
 
-RiverData::RiverData(const QImage& image) : image(image), heightMap(image) {
+RiverData::RiverData(QString name, const QImage& image) :
+    name(name), image(image), heightMap(image) {
 }
 
 bool RiverData::isInitialized() {

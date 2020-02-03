@@ -309,6 +309,12 @@ void RiverGui::createActions() {
 }
 
 void RiverGui::updateActions() {
+	if (riverData.isInitialized()) {
+		setWindowTitle(riverData.name + " — TTGA");
+	} else {
+		setWindowTitle("TTGA");
+	}
+
 	showInputDcelAction->setEnabled(riverData.isInitialized() &&
 	                                riverData.inputDcel != nullptr);
 	showMsComplexAction->setEnabled(riverData.isInitialized() &&
@@ -473,6 +479,7 @@ void RiverGui::openFrameNamed(const QString& fileName) {
 	// is it an image?
 	QString error = "[no error given]";
 	riverData.image = QImage(fileName);
+	riverData.name = fileName;
 	if (!riverData.isInitialized()) {
 		// is it a text file?
 		riverData.image = TextFileReader::readTextFile(

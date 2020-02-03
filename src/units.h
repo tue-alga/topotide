@@ -56,8 +56,8 @@ class Units {
 		 * \param y2 The y-coordinate of the second point.
 		 * \return The length of the line segment `(x1, y1) -> (x2, y2)`.
 		 */
-		double length(int x1, int y1,
-		              int x2, int y2) const;
+		double length(double x1, double y1,
+		              double x2, double y2) const;
 
 		/**
 		 * Converts an internal elevation to a real-world height value.

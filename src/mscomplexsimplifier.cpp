@@ -31,8 +31,6 @@ MsComplexSimplifier::simplify() {
 	});
 
 	// for all saddles from high to low
-	std::vector<MsComplex::Vertex> saddlesToRemove;
-
 	for (int i = saddles.size() - 1; i >= 0; i--) {
 		signalProgress(100 * (saddles.size() - i - 1) / saddles.size());
 

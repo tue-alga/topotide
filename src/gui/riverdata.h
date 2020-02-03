@@ -51,9 +51,11 @@ class RiverData : public QObject {
 
 		/**
 		 * Constructs a new river data object for the given river.
+		 *
+		 * \param name The name of the data set.
 		 * \param image The height map image.
 		 */
-		RiverData(const QImage& image);
+		RiverData(QString name, const QImage& image);
 
 		/**
 		 * Returns whether this river data object contains a river image.
@@ -62,6 +64,12 @@ class RiverData : public QObject {
 		 * does not contain a river.
 		 */
 		bool isInitialized();
+
+		/**
+		 * The name of this river data set. This is the name of the file
+		 * containing height data that has been opened.
+		 */
+		QString name;
 
 		/**
 		 * The height map image.
