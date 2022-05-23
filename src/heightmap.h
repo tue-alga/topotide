@@ -3,6 +3,8 @@
 
 #include <vector>
 
+#include <ostream>
+
 #include <QImage>
 
 /**
@@ -82,7 +84,26 @@ class HeightMap {
 				 * \param x The x-coordinate.
 				 * \param y The y-coordinate.
 				 */
-				Coordinate(int x, int y) : m_x(x), m_y(y) {};
+				Coordinate(int x, int y) : m_x(x), m_y(y) {}
+
+				friend std::ostream& operator<<(std::ostream& os,
+				                                Coordinate const& c) {
+					os << "(" << c.m_x << ", "
+					   << c.m_y << ")";
+					return os;
+				}
+
+				/**
+				 * Returns the midpoint between the two given coordinates.
+				 *
+				 * The coordinates of the midpoint are rounded down to the
+				 * nearest integer, if necessary.
+				 *
+				 * \param c1 The first coordinate.
+				 * \param c2 The second coordinate.
+				 * \return The midpoint.
+				 */
+				static Coordinate midpointBetween(Coordinate c1, Coordinate c2);
 		};
 
 		/**
@@ -111,67 +132,32 @@ class HeightMap {
 		QImage image() const;
 
 		/**
-		 * Path through a heightmap.
+		 * Returns the coordinate corresponding to the top-left point of this
+		 * heightmap.
+		 * \return The top-left coordinate.
 		 */
-		class Path {
-			public:
-				std::vector<Coordinate> m_points;
-
-				void removeSpikes();
-		};
+		Coordinate topLeft() const;
 
 		/**
-		 * The boundary of the river area. It contains of four parts, which
-		 * are each represented by a Path:
-		 *
-		 * * the source,
-		 * * the top side,
-		 * * the sink, and
-		 * * the bottom side.
+		 * Returns the coordinate corresponding to the top-right point of this
+		 * heightmap.
+		 * \return The top-right coordinate.
 		 */
-		class Boundary {
-			public:
-				Boundary();
-				Boundary(Path source, Path top, Path sink, Path bottom);
-
-				Path source;
-				Path top;
-				Path sink;
-				Path bottom;
-		};
+		Coordinate topRight() const;
 
 		/**
-		 * Returns the default boundary for this heightmap, that is, one that
-		 * has the source on the left side and the sink on the right side, and
-		 * spans the entire river.
-		 *
-		 * \return The boundary.
+		 * Returns the coordinate corresponding to the bottom-left point of this
+		 * heightmap.
+		 * \return The bottom-left coordinate.
 		 */
-		Boundary defaultBoundary() const;
+		Coordinate bottomLeft() const;
 
 		/**
-		 * Returns a Path along the top of the heightmap, from left to right.
-		 * \return The top path.
+		 * Returns the coordinate corresponding to the bottom-right point of this
+		 * heightmap.
+		 * \return The bottom-right coordinate.
 		 */
-		Path top() const;
-
-		/**
-		 * Returns a Path along the bottom of the heightmap, from left to right.
-		 * \return The bottom path.
-		 */
-		Path bottom() const;
-
-		/**
-		 * Returns a Path along the left of the heightmap, from top to bottom.
-		 * \return The left path.
-		 */
-		Path left() const;
-
-		/**
-		 * Returns a Path along the right of the heightmap, from top to bottom.
-		 * \return The right path.
-		 */
-		Path right() const;
+		Coordinate bottomRight() const;
 
 	private:
 

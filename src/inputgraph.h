@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "boundary.h"
 #include "heightmap.h"
 #include "point.h"
 #include "units.h"
@@ -138,11 +139,21 @@ class InputGraph {
 		 */
 		InputGraph(const HeightMap& heightMap, Units units = Units());
 
+		/**
+		 * Creates a graph corresponding to the part of the given heightmap that
+		 * is within the given boundary.
+		 *
+		 * \note The heightmap needs to have height at least 2; otherwise
+		 * behavior is undefined.
+		 *
+		 * \param heightMap The heightmap.
+		 * \param boundary The boundary. Everything inside this boundary is
+		 * included in the graph.
+		 * \param units The real-world units. Used for finding steepest-descent
+		 * paths.
+		 */
 		InputGraph(const HeightMap& heightMap,
-		           HeightMap::Path top,
-		           HeightMap::Path bottom,
-		           HeightMap::Path source,
-		           HeightMap::Path sink,
+		           Boundary boundary,
 		           Units units = Units());
 
 		/**

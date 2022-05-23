@@ -92,8 +92,10 @@ void IpeWriter::writeIpeFile(const HeightMap& heightMap,
 	double deltaMax = links.linkCount() > 1 ? links.link(1).delta : 1;
 	for (int i = links.linkCount() - 1; i >= 0; i--) {
 		LinkSequence::Link& link = links.link(i);
-		Path* path = linkToIpePath(link, deltaMax);
-		page->append(TSelect::ENotSelected, 1, path);
+		if (units.toRealVolume(link.delta) > 1e6) {
+			Path* path = linkToIpePath(link, deltaMax);
+			page->append(TSelect::ENotSelected, 1, path);
+		}
 	}
 
 	doc.push_back(page);

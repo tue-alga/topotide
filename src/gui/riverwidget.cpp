@@ -2,8 +2,10 @@
 #include <QColor>
 #include <QCursor>
 #include <QDebug>
+#include <QEvent>
 #include <QFont>
 #include <QImage>
+#include <QMessageBox>
 #include <QOpenGLContext>
 #include <QOpenGLShader>
 #include <QOpenGLVersionProfile>
@@ -43,24 +45,31 @@ void RiverWidget::mouseMoveEvent(QMouseEvent* event) {
 		return;
 	}
 
-	if (m_dragging) {
-		QPointF delta = event->pos() - m_previousMousePos;
-		QTransform translation;
-		translation.translate(delta.x(), delta.y());
-		m_transform = m_transform * translation;
+	QPointF converted = inverseConvertPoint(event->pos());
+	auto x = static_cast<int>(converted.x() + 0.5);
+	auto y = static_cast<int>(converted.y() + 0.5);
+	mousePos = Point(x, y, 0);
+	mouseInBounds = m_riverData->heightMap.isInBounds(x, y);
+	if (mouseInBounds) {
+		hoveredCoordinateChanged(x, y,
+		                         (float) m_riverData->heightMap.elevationAt(x, y));
 	} else {
-		QPointF converted = inverseConvertPoint(event->pos());
-		auto x = static_cast<int>(converted.x() + 0.5);
-		auto y = static_cast<int>(converted.y() + 0.5);
-		mouseInBounds = m_riverData->heightMap.isInBounds(x, y);
-		if (mouseInBounds) {
-			hoveredCoordinateChanged(x, y,
-			                         (float) m_riverData->heightMap.elevationAt(x, y));
-			mousePos = Point(x, y, 0);
+		emit mouseLeft();
+	}
+
+	if (m_dragging) {
+		if (m_inBoundaryEditMode && m_draggedVertex != nullptr) {
+			m_draggedVertex->m_x = mousePos.x;
+			m_draggedVertex->m_y = mousePos.y;
+			m_riverData->boundary.ensureConnection();
 		} else {
-			emit mouseLeft();
+			QPointF delta = event->pos() - m_previousMousePos;
+			QTransform translation;
+			translation.translate(delta.x(), delta.y());
+			m_transform = m_transform * translation;
 		}
 	}
+
 	m_previousMousePos = event->pos();
 	update();
 }
@@ -71,8 +80,29 @@ void RiverWidget::mousePressEvent(QMouseEvent* event) {
 	}
 
 	m_dragging = true;
+
+	if (m_inBoundaryEditMode) {
+		m_draggedVertex = hoveredBoundaryVertex(m_riverData->boundary);
+		if (m_draggedVertex == nullptr) {
+			std::pair<Path*, int> newMidpoint =
+			        hoveredBoundaryMidpoint(m_riverData->boundary);
+			Path* p = newMidpoint.first;
+			if (p != nullptr) {
+				int i = newMidpoint.second;
+				HeightMap::Coordinate c1 = p->m_points[i];
+				HeightMap::Coordinate c2 = p->m_points[i + 1];
+				HeightMap::Coordinate midP((c1.m_x + c2.m_x) / 2,
+				                           (c1.m_y + c2.m_y) / 2);
+				p->m_points.insert(p->m_points.begin() + i + 1, midP);
+				m_draggedVertex = &(p->m_points[i + 1]);
+			}
+		}
+	}
+
 	setCursor(Qt::ClosedHandCursor);
 	m_previousMousePos = event->pos();
+
+	update();
 }
 
 void RiverWidget::mouseReleaseEvent(QMouseEvent* event) {
@@ -82,6 +112,7 @@ void RiverWidget::mouseReleaseEvent(QMouseEvent* event) {
 
 	m_dragging = false;
 	setCursor(Qt::ArrowCursor);
+	m_draggedVertex = nullptr;
 }
 
 void RiverWidget::leaveEvent(QEvent* event) {
@@ -105,6 +136,14 @@ void RiverWidget::wheelEvent(QWheelEvent* event) {
 	double delta = event->angleDelta().y();
 	double factor = pow(2, delta / 240);
 
+	// limit the zoom factor
+	// note: we cannot use limitZoomFactor() here, because then while it would
+	// indeed be impossible to zoom in further than the MAX_ZOOM_FACTOR, the
+	// translation would still be carried out
+	if (factor * m_transform.m11() > MAX_ZOOM_FACTOR) {
+		factor = MAX_ZOOM_FACTOR / m_transform.m11();
+	}
+
 	QPointF mousePos = event->pos();
 	mousePos -= QPointF(width() / 2, height() / 2);
 	QTransform transform;
@@ -112,6 +151,8 @@ void RiverWidget::wheelEvent(QWheelEvent* event) {
 	transform.scale(factor, factor);
 	transform.translate(-mousePos.x(), -mousePos.y());
 	m_transform *= transform;
+
+	update();
 }
 
 void RiverWidget::initializeGL() {
@@ -125,12 +166,17 @@ void RiverWidget::initializeGL() {
 		updateTexture();
 	}
 
+	initializeShaders();
+}
+
+void RiverWidget::initializeShaders() {
+
 	// compile shaders and program
 	QOpenGLShader *vshader = new QOpenGLShader(QOpenGLShader::Vertex);
 	vshader->compileSourceFile(":/res/shader/river.vert");
 
 	QOpenGLShader *fshader = new QOpenGLShader(QOpenGLShader::Fragment);
-	fshader->compileSourceFile(":/res/shader/river.frag");
+	fshader->compileSourceFile(":/res/shader/river-" + m_theme + ".frag");
 
 	program = new QOpenGLShaderProgram();
 	program->addShader(vshader);
@@ -156,7 +202,7 @@ void RiverWidget::paintGL() {
 	program->bind();
 	program->setUniformValue("waterLevel", (float) m_waterLevel / (256 * 256 * 256));
 	program->setUniformValue("waterSlope", (float) m_waterSlope / 1000);
-	program->setUniformValue("showMap", m_showMap);
+	program->setUniformValue("showMap", m_showElevation);
 	program->setUniformValue("showOutlines", m_showOutlines);
 	program->setUniformValue("showShading", m_showShading);
 	program->setUniformValue("showWaterPlane", m_showWaterPlane);
@@ -181,42 +227,55 @@ void RiverWidget::paintGL() {
 	transform.scale(1, m_units.m_xResolution / m_units.m_yResolution);
 	program->setUniformValue("matrix", transform);
 
-	gl->glBegin(GL_QUADS);
-	gl->glVertex2d(-1, -1);
-	gl->glVertex2d(1, -1);
-	gl->glVertex2d(1, 1);
-	gl->glVertex2d(-1, 1);
-	gl->glEnd();
+	if (m_drawBackground) {
+		gl->glBegin(GL_QUADS);
+		gl->glVertex2d(-1, -1);
+		gl->glVertex2d(1, -1);
+		gl->glVertex2d(1, 1);
+		gl->glVertex2d(-1, 1);
+		gl->glEnd();
+	} else {
+		p.fillRect(rect(), QColor(255, 255, 255));
+	}
 
 	// draw overlays using QPainter
-	drawBoundary(p, m_riverData->boundary);
-
-	if (m_showInputDcel &&
-	        m_riverData->inputDcel != nullptr) {
-		QReadLocker lock(&(m_riverData->inputDcelLock));
-		drawInputDcel(p, m_riverData->inputDcel);
+	if (m_transform.m11() > 10) {
+		drawGrid(p);
 	}
 
-	if (m_showStriation &&
-	        m_riverData->msComplex != nullptr &&
-	        m_riverData->striation != nullptr) {
-		drawStriation(p, m_riverData->msComplex, m_riverData->striation);
-	}
+	if (m_inBoundaryEditMode) {
+		drawBoundaryEditable(p, m_riverData->boundary);
 
-	if (m_showMsComplex &&
-	        m_riverData->msComplex != nullptr) {
-		QReadLocker locker(&(m_riverData->msComplexLock));
-		drawMsComplex(p, m_riverData->msComplex);
-	}
+	} else {
+		drawBoundary(p, m_riverData->boundaryRasterized);
 
-	if (m_showNetwork &&
-	        m_riverData->msComplex != nullptr &&
-	        m_riverData->networkGraph != nullptr) {
-		drawNetwork(p, m_riverData->network, m_riverData->networkGraph);
-	}
+		if (m_showInputDcel &&
+		        m_riverData->inputDcel != nullptr) {
+			QReadLocker lock(&(m_riverData->inputDcelLock));
+			drawInputDcel(p, m_riverData->inputDcel);
+		}
 
-	if (mouseInBounds) {
-		drawVertex(p, mousePos, VertexType::disconnected);
+		if (m_showStriation &&
+		        m_riverData->msComplex != nullptr &&
+		        m_riverData->striation != nullptr) {
+			drawStriation(p, m_riverData->msComplex, m_riverData->striation);
+		}
+
+		if (m_showMsComplex &&
+		        m_riverData->msComplex != nullptr) {
+			QReadLocker locker(&(m_riverData->msComplexLock));
+			drawMsComplex(p, m_riverData->msComplex);
+		}
+
+		if (m_showNetwork &&
+		        m_riverData->msComplex != nullptr &&
+		        m_riverData->networkGraph != nullptr) {
+			drawNetwork(p, m_riverData->network, m_riverData->networkGraph);
+		}
+
+		if (mouseInBounds) {
+			drawVertex(p, mousePos, VertexType::disconnected);
+		}
 	}
 }
 
@@ -237,21 +296,102 @@ void RiverWidget::drawUninitializedMessage(QPainter& p) const {
 	text.drawContents(&p, rect());
 }
 
-void RiverWidget::drawBoundary(
-        QPainter& p, HeightMap::Boundary& boundary) const {
+void RiverWidget::drawGrid(QPainter &p) const {
+	double opacity = (m_transform.m11() - 10.0) / 50.0;
+	if (opacity > 1) {
+		opacity = 1;
+	}
+	int a = static_cast<int>(opacity * 128);
+	p.setPen(QPen(QBrush(QColor(0, 0, 0, a)), 1));
 
-	p.setPen(QPen(QBrush(QColor("black")), 2));
-	drawHeightMapPath(p, boundary.top);
-	drawHeightMapPath(p, boundary.bottom);
+	// vertical lines
+	float yTop = convertPoint(0, 0).y();
+	float yBottom = convertPoint(0, texture->height() - 1).y();
+	for (int x = 0; x < texture->width(); x++) {
+		float xF = convertPoint(x, 0).x();
+		p.drawLine(QPointF(xF, yTop), QPointF(xF, yBottom));
+	}
 
-	p.setPen(QPen(QBrush(QColor(13, 110, 190)), 3));
-	drawHeightMapPath(p, boundary.source);
-	p.setPen(QPen(QBrush(QColor(163, 99, 4)), 3));
-	drawHeightMapPath(p, boundary.sink);
+	// horizontal lines
+	float xLeft = convertPoint(0, 0).x();
+	float xRight = convertPoint(texture->width() - 1, 0).x();
+	for (int y = 0; y < texture->height(); y++) {
+		float yF = convertPoint(0, y).y();
+		p.drawLine(QPointF(xLeft, yF), QPointF(xRight, yF));
+	}
 }
 
-void RiverWidget::drawHeightMapPath(
-        QPainter& p, HeightMap::Path& path) const {
+void RiverWidget::drawBoundary(
+        QPainter& p, Boundary& boundary) const {
+
+	p.setPen(QPen(QBrush(QColor("black")), 2));
+	drawPath(p, boundary.m_top);
+	drawPath(p, boundary.m_bottom);
+
+	p.setPen(QPen(QBrush(QColor(13, 110, 190)), 3));
+	drawPath(p, boundary.m_source);
+	p.setPen(QPen(QBrush(QColor(163, 99, 4)), 3));
+	drawPath(p, boundary.m_sink);
+}
+
+void RiverWidget::drawBoundaryEditable(
+        QPainter& p, Boundary& boundary) const {
+
+	HeightMap::Coordinate* hovered =
+	        hoveredBoundaryVertex(m_riverData->boundary);
+	if (hovered != nullptr) {
+		drawBoundaryVertex(p, *hovered, true);
+	}
+
+	drawBoundary(p, boundary);
+
+	if (hovered == nullptr) {
+		std::pair<Path*, int> mid =
+		        hoveredBoundaryMidpoint(m_riverData->boundary);
+		if (mid.first != nullptr) {
+			HeightMap::Coordinate c1 = mid.first->m_points[mid.second];
+			HeightMap::Coordinate c2 = mid.first->m_points[mid.second + 1];
+			Point midP((c1.m_x + c2.m_x) / 2.0,
+			           (c1.m_y + c2.m_y) / 2.0,
+			           0);
+			p.setPen(QPen(QBrush(QColor(60, 60, 60, 128)), 0));
+			p.setBrush(QBrush(QColor(255, 255, 255, 128)));
+			QPointF p2 = convertPoint(midP);
+			p.drawEllipse(p2.x() - 4, p2.y() - 4, 8, 8);
+		}
+	}
+
+	drawBoundaryVertices(p, boundary.m_source);
+	drawBoundaryVertices(p, boundary.m_top);
+	drawBoundaryVertices(p, boundary.m_sink);
+	drawBoundaryVertices(p, boundary.m_bottom);
+}
+
+void RiverWidget::drawBoundaryVertices(QPainter& p, Path& path) const {
+	for (HeightMap::Coordinate c : path.m_points) {
+		if (c != path.end()) {
+			drawBoundaryVertex(p, c);
+		}
+	};
+}
+
+void RiverWidget::drawBoundaryVertex(
+        QPainter& p, HeightMap::Coordinate c,
+        bool outlined) const {
+
+	if (outlined) {
+		p.setPen(QPen(QBrush(QColor(80, 130, 255)), 8));
+	} else {
+		p.setPen(QPen(QBrush(QColor(60, 60, 60)), 0));
+	}
+	p.setBrush(QBrush(QColor(255, 255, 255)));
+
+	QPointF p2 = convertPoint(Point(c.m_x, c.m_y, 0));
+	p.drawEllipse(p2.x() - 4, p2.y() - 4, 8, 8);
+}
+
+void RiverWidget::drawPath(
+        QPainter& p, Path& path) const {
 
 	std::vector<HeightMap::Coordinate> points = path.m_points;
 	for (int i = 0; i < (int) (points.size()) - 1; i++) {
@@ -369,7 +509,7 @@ void RiverWidget::drawMsComplex(QPainter& p, MsComplex* msComplex) const {
 	}
 }
 
-void RiverWidget::drawVertex(QPainter& p, Point& p1, VertexType type) const {
+void RiverWidget::drawVertex(QPainter& p, Point p1, VertexType type) const {
 
 	if (type == VertexType::regular) {
 		return;
@@ -599,11 +739,14 @@ void RiverWidget::resetTransform() {
 	                              static_cast<double>(height()) / riverHeight);
 	m_transform *= scaleFactor;
 
+	limitMaxZoom();
+
 	update();
 }
 
 void RiverWidget::zoomIn() {
 	m_transform *= 1.5;
+	limitMaxZoom();
 
 	update();
 }
@@ -612,6 +755,12 @@ void RiverWidget::zoomOut() {
 	m_transform /= 1.5;
 
 	update();
+}
+
+void RiverWidget::limitMaxZoom() {
+	if (m_transform.m11() > MAX_ZOOM_FACTOR) {
+		m_transform *= MAX_ZOOM_FACTOR / m_transform.m11();
+	}
 }
 
 QPointF RiverWidget::convertPoint(Point p) const {
@@ -647,6 +796,84 @@ int RiverWidget::hoveredMsVertex(MsComplex* msComplex) const {
 	}
 
 	return -1;
+}
+
+HeightMap::Coordinate* RiverWidget::hoveredBoundaryVertex(
+        Boundary& boundary) const {
+	HeightMap::Coordinate* result = nullptr;
+	int minDistance = std::numeric_limits<int>::max();
+
+	auto checkPath = [&](Path& p) {
+		for (HeightMap::Coordinate& c : p.m_points) {
+			int distance = abs(c.m_x - mousePos.x) +
+			               abs(c.m_y - mousePos.y);
+			if (c != p.end() && distance < minDistance) {
+				result = &c;
+				minDistance = distance;
+			}
+		};
+	};
+
+	checkPath(boundary.m_source);
+	checkPath(boundary.m_top);
+	checkPath(boundary.m_sink);
+	checkPath(boundary.m_bottom);
+
+	if (minDistance > 25.0 / m_transform.m11()) {
+		return nullptr;
+	}
+
+	return result;
+}
+
+std::pair<Path*, int> RiverWidget::hoveredBoundaryMidpoint(
+        Boundary& boundary) const {
+	std::pair<Path*, int> result;
+	double minDistance = std::numeric_limits<int>::max();
+
+	auto checkPath = [&](Path& p) {
+		for (int i = 0; i < p.length(); i++) {
+			HeightMap::Coordinate& c1 = p.m_points[i];
+			HeightMap::Coordinate& c2 = p.m_points[i + 1];
+			double distance = abs((c1.m_x + c2.m_x) / 2.0 - mousePos.x) +
+			                  abs((c1.m_y + c2.m_y) / 2.0 - mousePos.y);
+			if (distance < minDistance) {
+				result.first = &p;
+				result.second = i;
+				minDistance = distance;
+			}
+		};
+	};
+
+	checkPath(boundary.m_source);
+	checkPath(boundary.m_top);
+	checkPath(boundary.m_sink);
+	checkPath(boundary.m_bottom);
+
+	if (minDistance > 25.0 / m_transform.m11()) {
+		return std::make_pair(nullptr, -1);
+	}
+
+	return result;
+}
+
+bool RiverWidget::drawBackground() const {
+	return m_drawBackground;
+}
+
+void RiverWidget::setDrawBackground(bool drawBackground) {
+	m_drawBackground = drawBackground;
+	update();
+}
+
+QString RiverWidget::theme() const {
+	return m_theme;
+}
+
+void RiverWidget::setTheme(QString theme) {
+	m_theme = theme;
+	initializeShaders();
+	update();
 }
 
 int RiverWidget::waterLevel() const {
@@ -694,12 +921,12 @@ void RiverWidget::setShowOutlines(bool showOutlines) {
 	update();
 }
 
-bool RiverWidget::showMap() const {
-	return m_showMap;
+bool RiverWidget::showElevation() const {
+	return m_showElevation;
 }
 
-void RiverWidget::setShowMap(bool showMap) {
-	m_showMap = showMap;
+void RiverWidget::setShowElevation(bool showElevation) {
+	m_showElevation = showElevation;
 	update();
 }
 
@@ -774,4 +1001,21 @@ void RiverWidget::setNetworkDelta(double networkDelta) {
 void RiverWidget::setUnits(Units units) {
 	m_units = units;
 	update();
+}
+
+void RiverWidget::setBoundaryEditMode(bool inBoundaryEditMode) {
+	m_inBoundaryEditMode = inBoundaryEditMode;
+	update();
+}
+
+void RiverWidget::startBoundaryEditMode() {
+	setBoundaryEditMode(true);
+}
+
+void RiverWidget::endBoundaryEditMode() {
+	setBoundaryEditMode(false);
+}
+
+bool RiverWidget::boundaryEditMode() const {
+	return m_inBoundaryEditMode;
 }

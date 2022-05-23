@@ -17,6 +17,7 @@
 #include <iostream>
 
 #include "../boundaryreader.h"
+#include "../boundarywriter.h"
 #include "../linksequence.h"
 #include "../textfilereader.h"
 
@@ -55,12 +56,24 @@ void RiverGui::createGui() {
 
 	// background dock
 	backgroundDock = new BackgroundDock(this);
+	connect(backgroundDock, &BackgroundDock::showElevationChanged,
+	        map, &RiverWidget::setShowElevation);
+	map->setShowElevation(backgroundDock->showElevation());
+	connect(backgroundDock, &BackgroundDock::themeChanged,
+	        map, &RiverWidget::setTheme);
+	map->setTheme(backgroundDock->theme());
+	connect(backgroundDock, &BackgroundDock::showWaterPlaneChanged,
+	        map, &RiverWidget::setShowWaterPlane);
+	map->setShowWaterPlane(backgroundDock->showWaterPlane());
 	connect(backgroundDock, &BackgroundDock::waterLevelChanged,
 	        map, &RiverWidget::setWaterLevel);
 	map->setWaterLevel(backgroundDock->waterLevel());
-	connect(backgroundDock, &BackgroundDock::waterSlopeChanged,
-	        map, &RiverWidget::setWaterSlope);
-	map->setWaterSlope(backgroundDock->waterSlope());
+	connect(backgroundDock, &BackgroundDock::showContoursChanged,
+	        map, &RiverWidget::setShowOutlines);
+	map->setShowOutlines(backgroundDock->showContours());
+	connect(backgroundDock, &BackgroundDock::showShadingChanged,
+	        map, &RiverWidget::setShowShading);
+	map->setShowShading(backgroundDock->showShading());
 	addDockWidget(Qt::TopDockWidgetArea, backgroundDock);
 	connect(this, &RiverGui::unitsChanged,
 	        backgroundDock, &BackgroundDock::setUnits);
@@ -161,7 +174,7 @@ void RiverGui::createGui() {
 
 void RiverGui::createActions() {
 
-	openAction = new QAction("&Open...", this);
+	openAction = new QAction("&Open DEM...", this);
 	openAction->setShortcuts(QKeySequence::Open);
 	openAction->setIcon(UiHelper::createIcon("document-open"));
 	openAction->setToolTip("Open a river image");
@@ -172,13 +185,13 @@ void RiverGui::createActions() {
 	openBoundaryAction->setToolTip("Open a river boundary");
 	connect(openBoundaryAction, &QAction::triggered, this, &RiverGui::openBoundary);
 
-	saveIpeAction = new QAction("&Save Ipe image...", this);
+	saveIpeAction = new QAction("Save Ipe image...", this);
 	saveIpeAction->setShortcuts(QKeySequence::Save);
 	saveIpeAction->setIcon(UiHelper::createIcon("document-save"));
 	saveIpeAction->setToolTip("Save the computed network as an Ipe image");
 	connect(saveIpeAction, &QAction::triggered, this, &RiverGui::saveIpeImage);
 
-	saveGraphAction = new QAction("&Save graph...", this);
+	saveGraphAction = new QAction("Save graph...", this);
 	saveGraphAction->setIcon(UiHelper::createIcon("document-save"));
 	saveGraphAction->setToolTip("Save the computed network as a text document");
 	connect(saveGraphAction, &QAction::triggered, this, &RiverGui::saveGraph);
@@ -188,40 +201,24 @@ void RiverGui::createActions() {
 	saveLinkSequenceAction->setToolTip("Save the link sequence of the computed network as a text document");
 	connect(saveLinkSequenceAction, &QAction::triggered, this, &RiverGui::saveLinkSequence);
 
+	saveBoundaryAction = new QAction("&Save boundary...", this);
+	saveBoundaryAction->setIcon(UiHelper::createIcon("document-save"));
+	saveBoundaryAction->setToolTip("Save a river boundary");
+	connect(saveBoundaryAction, &QAction::triggered, this, &RiverGui::saveBoundary);
+
 	quitAction = new QAction("&Quit", this);
 	quitAction->setShortcuts(QKeySequence::Quit);
 	quitAction->setIcon(UiHelper::createIcon("application-exit"));
 	quitAction->setToolTip("Quit the application");
 	connect(quitAction, &QAction::triggered, qApp, &QApplication::quit);
 
-	showMapAction = new QAction("&Map", this);
-	showMapAction->setIcon(UiHelper::createIcon("compass"));
-	showMapAction->setToolTip("Show or hide the background map");
-	showMapAction->setCheckable(true);
-	showMapAction->setChecked(true);
-	connect(showMapAction, &QAction::triggered, map, &RiverWidget::setShowMap);
-	connect(showMapAction, &QAction::triggered, this, &RiverGui::updateActions);
-
-	showWaterPlaneAction = new QAction("&Water", this);
-	showWaterPlaneAction->setIcon(UiHelper::createIcon("fill-color"));
-	showWaterPlaneAction->setToolTip("Show or hide the color distinction between water and land on the background map");
-	showWaterPlaneAction->setCheckable(true);
-	showWaterPlaneAction->setChecked(true);
-	connect(showWaterPlaneAction, &QAction::toggled, map, &RiverWidget::setShowWaterPlane);
-
-	showOutlinesAction = new QAction("&Contours", this);
-	showOutlinesAction->setIcon(UiHelper::createIcon("draw-freehand"));
-	showOutlinesAction->setToolTip("Show or hide the contour lines in the background map");
-	showOutlinesAction->setCheckable(true);
-	showOutlinesAction->setChecked(true);
-	connect(showOutlinesAction, &QAction::toggled, map, &RiverWidget::setShowOutlines);
-
-	showShadingAction = new QAction("&Shading", this);
-	showShadingAction->setIcon(UiHelper::createIcon("games-hint"));
-	showShadingAction->setToolTip("Toggle hill-shading effects");
-	showShadingAction->setCheckable(true);
-	showShadingAction->setChecked(false);
-	connect(showShadingAction, &QAction::toggled, map, &RiverWidget::setShowShading);
+	showBackgroundAction = new QAction("&Background", this);
+	showBackgroundAction->setIcon(UiHelper::createIcon("compass"));
+	showBackgroundAction->setToolTip("Show or hide the background");
+	showBackgroundAction->setCheckable(true);
+	showBackgroundAction->setChecked(true);
+	connect(showBackgroundAction, &QAction::triggered, map, &RiverWidget::setDrawBackground);
+	connect(showBackgroundAction, &QAction::triggered, this, &RiverGui::updateActions);
 
 	showInputDcelAction = new QAction("Show &input graph", this);
 	showInputDcelAction->setIcon(UiHelper::createIcon("color-gradient"));
@@ -272,6 +269,21 @@ void RiverGui::createActions() {
 		}
 	});
 
+	editBoundaryAction = new QAction("&Edit boundary", this);
+	editBoundaryAction->setIcon(UiHelper::createIcon("draw-freehand"));
+	editBoundaryAction->setCheckable(true);
+	editBoundaryAction->setToolTip("Delineate the part of the river to be analyzed, by drawing a boundary");
+	connect(editBoundaryAction, &QAction::toggled, [&] {
+		if (editBoundaryAction->isChecked()) {
+			map->startBoundaryEditMode();
+		} else {
+			riverData.boundaryRasterized = riverData.boundary.rasterize();
+			map->endBoundaryEditMode();
+			markComputationNeeded(true);
+		}
+		updateActions();
+	});
+
 	computeAction = new QAction("&Compute network", this);
 	computeAction->setShortcut(QKeySequence("Ctrl+C"));
 	computeAction->setIcon(UiHelper::createIcon("run-build"));
@@ -316,13 +328,23 @@ void RiverGui::updateActions() {
 	}
 
 	showInputDcelAction->setEnabled(riverData.isInitialized() &&
-	                                riverData.inputDcel != nullptr);
+	                                riverData.inputDcel != nullptr &&
+	                                !map->boundaryEditMode());
 	showMsComplexAction->setEnabled(riverData.isInitialized() &&
-	                                riverData.msComplex != nullptr);
+	                                riverData.msComplex != nullptr &&
+	                                !map->boundaryEditMode());
 	showStriationAction->setEnabled(riverData.isInitialized() &&
-	                                riverData.striation != nullptr);
+	                                riverData.striation != nullptr &&
+	                                !map->boundaryEditMode());
 	showNetworkAction->setEnabled(riverData.isInitialized() &&
-	                              riverData.networkGraph != nullptr);
+	                              riverData.networkGraph != nullptr &&
+	                                !map->boundaryEditMode());
+
+	openBoundaryAction->setEnabled(riverData.isInitialized() &&
+	                                !map->boundaryEditMode());
+	saveBoundaryAction->setEnabled(riverData.isInitialized() &&
+	                                !map->boundaryEditMode());
+	editBoundaryAction->setEnabled(riverData.isInitialized());
 
 	saveIpeAction->setEnabled(riverData.isInitialized() &&
 	                          riverData.networkGraph != nullptr);
@@ -330,17 +352,12 @@ void RiverGui::updateActions() {
 	                            riverData.networkGraph != nullptr);
 	saveLinkSequenceAction->setEnabled(riverData.isInitialized() &&
 	                            riverData.networkGraph != nullptr);
-	showMapAction->setEnabled(riverData.isInitialized());
-	showWaterPlaneAction->setEnabled(showMapAction->isEnabled() &&
-	                                 showMapAction->isChecked());
-	showOutlinesAction->setEnabled(showMapAction->isEnabled() &&
-	                                 showMapAction->isChecked());
-	showShadingAction->setEnabled(showMapAction->isEnabled() &&
-	                                 showMapAction->isChecked());
+	showBackgroundAction->setEnabled(riverData.isInitialized());
 
 	computeAction->setEnabled(riverData.isInitialized() &&
 	                          m_computationNeeded &&
-	                          !riverData.isThreadRunning());
+	                          !riverData.isThreadRunning() &&
+	                          !map->boundaryEditMode());
 
 	zoomInAction->setEnabled(riverData.isInitialized());
 	zoomOutAction->setEnabled(riverData.isInitialized());
@@ -363,23 +380,23 @@ void RiverGui::updateActions() {
 void RiverGui::createMenu() {
 	fileMenu = menuBar()->addMenu("&File");
 	fileMenu->addAction(openAction);
-	fileMenu->addAction(openBoundaryAction);
-	fileMenu->addSeparator();
 	fileMenu->addAction(saveIpeAction);
 	fileMenu->addAction(saveGraphAction);
 	fileMenu->addAction(saveLinkSequenceAction);
 	fileMenu->addSeparator();
+	fileMenu->addAction(openBoundaryAction);
+	fileMenu->addAction(saveBoundaryAction);
+	fileMenu->addSeparator();
 	fileMenu->addAction(quitAction);
+
+	editMenu = menuBar()->addMenu("&Edit");
+	editMenu->addAction(editBoundaryAction);
 
 	runMenu = menuBar()->addMenu("&Run");
 	runMenu->addAction(computeAction);
 
 	viewMenu = menuBar()->addMenu("&View");
-	viewMenu->addAction(showMapAction);
-	viewMenu->addAction(showWaterPlaneAction);
-	viewMenu->addAction(showOutlinesAction);
-	viewMenu->addAction(showShadingAction);
-	viewMenu->addSeparator();
+	viewMenu->addAction(showBackgroundAction);
 	viewMenu->addAction(zoomInAction);
 	viewMenu->addAction(zoomOutAction);
 	viewMenu->addAction(fitToViewAction);
@@ -402,10 +419,8 @@ void RiverGui::createToolBar() {
 
 	toolBar->addAction(computeAction);
 	toolBar->addSeparator();
-	toolBar->addAction(showMapAction);
-	toolBar->addAction(showWaterPlaneAction);
-	toolBar->addAction(showOutlinesAction);
-	toolBar->addAction(showShadingAction);
+	toolBar->addAction(showBackgroundAction);
+	toolBar->addAction(editBoundaryAction);
 	toolBar->addSeparator();
 	toolBar->addAction(zoomInAction);
 	toolBar->addAction(zoomOutAction);
@@ -504,7 +519,8 @@ void RiverGui::openFrameNamed(const QString& fileName) {
 		return;
 	}
 
-	riverData.boundary = riverData.heightMap.defaultBoundary();
+	Boundary boundary(riverData.heightMap);
+	riverData.setBoundary(boundary);
 
 	emit unitsChanged(riverData.units);
 
@@ -539,7 +555,7 @@ void RiverGui::openBoundary() {
 	}
 
 	QString error = "";
-	HeightMap::Boundary boundary =
+	Boundary boundary =
 	        BoundaryReader::readBoundary(fileName, riverData.heightMap, error);
 
 	if (error != "") {
@@ -557,7 +573,7 @@ void RiverGui::openBoundary() {
 		return;
 	}
 
-	riverData.boundary = boundary;
+	riverData.setBoundary(boundary);
 	markComputationNeeded(false);
 }
 
@@ -664,6 +680,22 @@ void RiverGui::saveLinkSequence() {
 	                         fileName + "\"", 5000);
 }
 
+void RiverGui::saveBoundary() {
+
+	QString fileName = QFileDialog::getSaveFileName(this,
+	        "Save boundary",
+	        ".",
+	        "Boundary text files (*.txt)");
+	if (fileName == nullptr) {
+		return;
+	}
+
+	BoundaryWriter::writeBoundary(riverData.boundary, fileName);
+
+	statusBar()->showMessage("Saved boundary as \"" +
+	                         fileName + "\"", 5000);
+}
+
 void RiverGui::about() {
 	QMessageBox msgBox;
 	msgBox.setWindowTitle("About TTGA");
@@ -710,6 +742,17 @@ void RiverGui::markComputationNeeded(bool onlyNetwork) {
 
 void RiverGui::startComputation() {
 	if (!m_computationNeeded) {
+		return;
+	}
+	if (!riverData.boundaryRasterized.isValid()) {
+		QMessageBox msgBox;
+		msgBox.setIcon(QMessageBox::Critical);
+		msgBox.setWindowTitle("Boundary invalid");
+		msgBox.setText("<qt>The computation cannot run as the boundary is invalid.");
+		msgBox.setInformativeText("<qt>A valid boundary does not self-intersect and does not visit "
+		                          "any points more than once. "
+		                          "Edit the boundary and try again.");
+		msgBox.exec();
 		return;
 	}
 	progressDock->reset();

@@ -302,7 +302,7 @@ int RiverCli::runComputation(const QStringList& args) {
 	// command-line arguments are OK, let's run the algorithm
 
 	HeightMap heightMap(input);
-	HeightMap::Boundary boundary = heightMap.defaultBoundary();
+	Boundary boundary(heightMap);
 	if (parser.isSet(boundaryOption)) {
 		QString boundaryError = "";
 		boundary = BoundaryReader::readBoundary(
@@ -319,11 +319,8 @@ int RiverCli::runComputation(const QStringList& args) {
 
 	std::cerr << "Computing input graph...\n";
 	InputGraph inputGraph(heightMap,
-						  boundary.top,
-						  boundary.bottom,
-						  boundary.source,
-						  boundary.sink,
-						  units);
+	                      boundary,
+	                      units);
 
 	std::cerr << "Computing input DCEL...\n";
 	InputDcel inputDcel(inputGraph);

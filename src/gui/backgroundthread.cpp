@@ -54,13 +54,9 @@ void BackgroundThread::run() {
 void
 BackgroundThread::computeInputGraph() {
 	emit taskStarted("Computing input graph");
-	HeightMap::Path top;
 	auto* inputGraph(new InputGraph(
 	                           m_data->heightMap,
-	                           m_data->boundary.top,
-	                           m_data->boundary.bottom,
-	                           m_data->boundary.source,
-	                           m_data->boundary.sink,
+	                           m_data->boundaryRasterized,
 	                           m_data->units));
 	emit progressMade("Computing input graph", 100);
 	{

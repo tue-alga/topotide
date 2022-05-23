@@ -108,24 +108,15 @@ vec2 texCoord(vec2 pos) {
 
 bool isOnContour(vec2 pos) {
 	bool onOutline = false;
-	int value = int(14 * elevation(pos.xy));
+	int value = int(20 * elevation(pos.xy));
 	for (int dx = -1; dx <= 1; dx++) {
 		for (int dy = -1; dy <= 1; dy++) {
-			int valueAround = int(14 * elevation(
+			int valueAround = int(20 * elevation(
 			            pos.xy + vec2(dx * lineWidth, dy * lineHeight)));
 			onOutline = onOutline || (value != valueAround);
 		}
 	}
 	return onOutline;
-}
-
-vec3 interpolate(float p, float p1, float p2, vec3 v1, vec3 v2) {
-	float fraction = (p - p1) / (p2 - p1);
-	return (1 - fraction) * v1 + fraction * v2;
-}
-
-vec3 c(int r, int g, int b) {
-	return vec3(r / 255f, g / 255f, b / 255f);
 }
 
 /**
@@ -134,30 +125,17 @@ vec3 c(int r, int g, int b) {
 void main() {
 	vec2 tPos = texCoord(pos.xy);
 
-	if (showMap && tPos.x >= .5f / texWidth && tPos.x <= 1 - .5f / texWidth &&
+	if (tPos.x >= .5f / texWidth && tPos.x <= 1 - .5f / texWidth &&
 			tPos.y >= .5f / texHeight && tPos.y <= 1 - .5f / texHeight) {
 
 		float value = elevationDetrended(pos.xy);
 
 		if (showWaterPlane && value < 0) {
 			color = waterColor(value);
+		} else if (showMap) {
+			color = vec3(elevation(pos.xy));
 		} else {
-			float p = elevation(pos.xy);
-			if (p >= 1f) {
-				color = vec3(1f);
-			} else if (p >= 5/6f) {
-				color = interpolate(p, 5/6f, 6/6f, c(255, 255, 191), c(254, 224, 144));
-			} else if (p >= 4/6f) {
-				color = interpolate(p, 4/6f, 5/6f, c(224, 243, 248), c(255, 255, 191));
-			} else if (p >= 3/6f) {
-				color = interpolate(p, 3/6f, 4/6f, c(171, 217, 233), c(224, 243, 248));
-			} else if (p >= 2/6f) {
-				color = interpolate(p, 2/6f, 3/6f, c(116, 173, 209), c(171, 217, 233));
-			} else if (p >= 1/6f) {
-				color = interpolate(p, 1/6f, 2/6f, c(69, 117, 180), c(116, 173, 209));
-			} else {
-				color = interpolate(p, 0/6f, 1/6f, c(49, 54, 149), c(69, 117, 180));
-			}
+			color = vec3(1);
 		}
 
 		if (showShading) {

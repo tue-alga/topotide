@@ -10,6 +10,7 @@
 #include <QOpenGLWidget>
 #include <QPoint>
 #include <QString>
+#include <QTabletEvent>
 #include <QWheelEvent>
 
 #include "../lowestpathtree.h"
@@ -34,12 +35,15 @@ class RiverWidget : public QOpenGLWidget {
 		~RiverWidget() override;
 
 		void initializeGL() override;
+		void initializeShaders();
 		void updateTexture();
 		void paintGL() override;
 
+		bool drawBackground() const;
+		QString theme() const;
 		int waterLevel() const;
 		int waterSlope() const;
-		bool showMap() const;
+		bool showElevation() const;
 		bool showWaterPlane() const;
 		bool showOutlines() const;
 		bool showShading() const;
@@ -51,10 +55,14 @@ class RiverWidget : public QOpenGLWidget {
 		int networkPath() const;
 		double networkDelta() const;
 
+		bool boundaryEditMode() const;
+
 	public slots:
+		void setDrawBackground(bool drawBackground);
+		void setTheme(QString theme);
 		void setWaterLevel(int waterLevel);
 		void setWaterSlope(int waterSlope);
-		void setShowMap(bool showMap);
+		void setShowElevation(bool showElevation);
 		void setShowWaterPlane(bool showWaterPlane);
 		void setShowOutlines(bool showOutlines);
 		void setShowShading(bool showShading);
@@ -73,8 +81,13 @@ class RiverWidget : public QOpenGLWidget {
 		void resetTransform();
 		void zoomIn();
 		void zoomOut();
+		void limitMaxZoom();
 
 		void setUnits(Units units);
+
+		void setBoundaryEditMode(bool inBoundaryEditMode);
+		void startBoundaryEditMode();
+		void endBoundaryEditMode();
 
 	protected:
 		void mouseMoveEvent(QMouseEvent* event) override;
@@ -107,12 +120,19 @@ class RiverWidget : public QOpenGLWidget {
 		 */
 		QTransform m_transform;
 
+		const double MAX_ZOOM_FACTOR = 30.0;
+
 		void drawUninitializedMessage(QPainter& p) const;
-		void drawBoundary(QPainter& p, HeightMap::Boundary& boundary) const;
-		void drawHeightMapPath(QPainter& p, HeightMap::Path& path) const;
+		void drawGrid(QPainter& p) const;
+		void drawBoundary(QPainter& p, Boundary& boundary) const;
+		void drawBoundaryEditable(QPainter& p, Boundary& boundary) const;
+		void drawBoundaryVertices(QPainter& p, Path& path) const;
+		void drawBoundaryVertex(QPainter& p, HeightMap::Coordinate c,
+		                        bool outlined = false) const;
+		void drawPath(QPainter& p, Path& path) const;
 		void drawInputDcel(QPainter& p, InputDcel* dcel) const;
 		void drawMsComplex(QPainter& p, MsComplex* msComplex) const;
-		void drawVertex(QPainter& p, Point& p1, VertexType type) const;
+		void drawVertex(QPainter& p, Point p1, VertexType type) const;
 		void drawMsEdge(QPainter& p, MsComplex::HalfEdge e) const;
 		void drawStriation(QPainter& p, MsComplex* msc,
 		                   Striation* striation) const;
@@ -126,15 +146,26 @@ class RiverWidget : public QOpenGLWidget {
 		QPointF inverseConvertPoint(QPointF p) const;
 		int hoveredMsVertex(MsComplex* msComplex) const;
 
+		HeightMap::Coordinate* hoveredBoundaryVertex(Boundary& boundary) const;
+
+		// returns the first vertex of the edge of which the midpoint is
+		// hovered
+		std::pair<Path*, int>
+		                hoveredBoundaryMidpoint(Boundary& boundary) const;
+
+		HeightMap::Coordinate* m_draggedVertex = nullptr;
+
 		RiverData* m_riverData;
 
 		QOpenGLShaderProgram* program;
 		QOpenGLTexture* texture = nullptr;
 		QOpenGLFunctions_3_0* gl;
 
+		QString m_theme = "blue-yellow";
 		int m_waterLevel = 0;
 		int m_waterSlope = 0;
-		bool m_showMap = true;
+		bool m_drawBackground = true;
+		bool m_showElevation = true;
 		bool m_showWaterPlane = true;
 		bool m_showOutlines = true;
 		bool m_showShading = false;
@@ -154,6 +185,8 @@ class RiverWidget : public QOpenGLWidget {
 		bool m_dragging = false;
 
 		Units m_units;
+
+		bool m_inBoundaryEditMode = false;
 };
 
 #endif // RIVERWIDGET_H

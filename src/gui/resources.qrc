@@ -1,7 +1,9 @@
 <RCC>
     <qresource prefix="/">
         <file>res/shader/river.vert</file>
-        <file>res/shader/river.frag</file>
+        <file>res/shader/river-blue-yellow.frag</file>
+        <file>res/shader/river-grayscale.frag</file>
+        <file>res/shader/river-purples.frag</file>
         <file>res/images/saddles.png</file>
         <file>res/images/saddles-big.png</file>
         <file>res/icons/compass.svg</file>

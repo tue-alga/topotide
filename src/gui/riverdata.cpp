@@ -4,7 +4,7 @@
 
 #include "backgroundthread.h"
 
-RiverData::RiverData() = default;
+RiverData::RiverData() {}
 
 RiverData::RiverData(QString name, const QImage& image) :
     name(name), image(image), heightMap(image) {
@@ -119,4 +119,9 @@ void RiverData::deleteEverything(bool onlyNetwork) {
 		delete networkGraph;
 		networkGraph = nullptr;
 	}
+}
+
+void RiverData::setBoundary(Boundary& b) {
+	boundary = b;
+	boundaryRasterized = b.rasterize();
 }

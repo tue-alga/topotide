@@ -19,6 +19,12 @@ int HeightMap::height() const {
 	return _image.height();
 }
 
+HeightMap::Coordinate HeightMap::Coordinate::midpointBetween(
+        HeightMap::Coordinate c1, HeightMap::Coordinate c2) {
+	return Coordinate((c1.m_x + c2.m_x) / 2,
+	                  (c1.m_y + c2.m_y) / 2);
+}
+
 bool HeightMap::isInBounds(int x, int y) const {
 	return isInBounds(Coordinate(x, y));
 }
@@ -28,59 +34,22 @@ bool HeightMap::isInBounds(Coordinate c) const {
 		c.m_x < width() && c.m_y < height();
 }
 
-HeightMap::Boundary::Boundary() {}
-
-HeightMap::Boundary::Boundary(Path source, Path top, Path sink, Path bottom) :
-    source(source), top(top), sink(sink), bottom(bottom) {}
-
-HeightMap::Boundary HeightMap::defaultBoundary() const {
-	return Boundary(left(), top(), right(), bottom());
-}
-
-HeightMap::Path HeightMap::top() const {
-	Path p;
-	for (int x = 0; x < width(); x++) {
-		p.m_points.emplace_back(x, 0);
-	}
-	return p;
-}
-
-HeightMap::Path HeightMap::bottom() const {
-	Path p;
-	for (int x = 0; x < width(); x++) {
-		p.m_points.emplace_back(x, height() - 1);
-	}
-	return p;
-}
-
-HeightMap::Path HeightMap::left() const {
-	Path p;
-	for (int y = 0; y < height(); y++) {
-		p.m_points.emplace_back(0, y);
-	}
-	return p;
-}
-
-HeightMap::Path HeightMap::right() const {
-	Path p;
-	for (int y = 0; y < height(); y++) {
-		p.m_points.emplace_back(width() - 1, y);
-	}
-	return p;
-}
-
 QImage HeightMap::image() const {
 	return _image;
 }
 
-void HeightMap::Path::removeSpikes() {
-	for (int i = 1; i < m_points.size() - 1; i++) {
-		// find tip of the spike
-		if (m_points[i - 1] == m_points[i + 1]) {
-			m_points.erase(m_points.begin() + i, m_points.begin() + i + 2);
-			if (i > 1) {
-				i -= 2;
-			}
-		}
-	}
+HeightMap::Coordinate HeightMap::topLeft() const {
+	return Coordinate(0, 0);
+}
+
+HeightMap::Coordinate HeightMap::topRight() const {
+	return Coordinate(width() - 1, 0);
+}
+
+HeightMap::Coordinate HeightMap::bottomLeft() const {
+	return Coordinate(0, height() - 1);
+}
+
+HeightMap::Coordinate HeightMap::bottomRight() const {
+	return Coordinate(width() - 1, height() - 1);
 }

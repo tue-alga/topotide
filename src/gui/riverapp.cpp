@@ -18,7 +18,7 @@
  */
 int main(int argc, char* argv[]) {
 
-	const QString APP_VERSION = "1.4.1";
+	const QString APP_VERSION = "(unreleased development version)";
 
 	if (argc <= 1) {
 		QApplication a(argc, argv);

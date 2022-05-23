@@ -18,16 +18,14 @@ InputGraph::InputGraph(Units units) :
 }
 
 InputGraph::InputGraph(const HeightMap& heightMap, Units units) :
-    InputGraph(heightMap, heightMap.top(), heightMap.bottom(),
-               heightMap.left(), heightMap.right(), units) {}
+    InputGraph(heightMap, Boundary(heightMap), units) {}
 
 InputGraph::InputGraph(const HeightMap& heightMap,
-                       HeightMap::Path top,
-                       HeightMap::Path bottom,
-                       HeightMap::Path source,
-                       HeightMap::Path sink,
+                       Boundary boundary,
                        Units units) :
     m_units(units) {
+
+	boundary = boundary.rasterize();
 
 	// first add the global source, sink and maximum
 	int globalSource = addVertex();
@@ -111,27 +109,27 @@ InputGraph::InputGraph(const HeightMap& heightMap,
 	            heightMap.width(),
 	            std::vector<std::array<bool, 6>>(heightMap.height(),
 	                                             std::array<bool, 6>{}));
-	for (int i = 0; i < top.m_points.size() - 1; i++) {
-		HeightMap::Coordinate p1 = top.m_points[i];
-		HeightMap::Coordinate p2 = top.m_points[i + 1];
+	for (int i = 0; i < boundary.m_top.m_points.size() - 1; i++) {
+		HeightMap::Coordinate p1 = boundary.m_top.m_points[i];
+		HeightMap::Coordinate p2 = boundary.m_top.m_points[i + 1];
 		topEdges[p1.m_x][p1.m_y][Edge::directionBetween(p1, p2)] = true;
 		topEdges[p2.m_x][p2.m_y][Edge::directionBetween(p2, p1)] = true;
 	}
-	for (int i = 0; i < bottom.m_points.size() - 1; i++) {
-		HeightMap::Coordinate p1 = bottom.m_points[i];
-		HeightMap::Coordinate p2 = bottom.m_points[i + 1];
+	for (int i = 0; i < boundary.m_bottom.m_points.size() - 1; i++) {
+		HeightMap::Coordinate p1 = boundary.m_bottom.m_points[i];
+		HeightMap::Coordinate p2 = boundary.m_bottom.m_points[i + 1];
 		bottomEdges[p1.m_x][p1.m_y][Edge::directionBetween(p1, p2)] = true;
 		bottomEdges[p2.m_x][p2.m_y][Edge::directionBetween(p2, p1)] = true;
 	}
-	for (int i = 0; i < source.m_points.size() - 1; i++) {
-		HeightMap::Coordinate p1 = source.m_points[i];
-		HeightMap::Coordinate p2 = source.m_points[i + 1];
+	for (int i = 0; i < boundary.m_source.m_points.size() - 1; i++) {
+		HeightMap::Coordinate p1 = boundary.m_source.m_points[i];
+		HeightMap::Coordinate p2 = boundary.m_source.m_points[i + 1];
 		sourceEdges[p1.m_x][p1.m_y][Edge::directionBetween(p1, p2)] = true;
 		sourceEdges[p2.m_x][p2.m_y][Edge::directionBetween(p2, p1)] = true;
 	}
-	for (int i = 0; i < sink.m_points.size() - 1; i++) {
-		HeightMap::Coordinate p1 = sink.m_points[i];
-		HeightMap::Coordinate p2 = sink.m_points[i + 1];
+	for (int i = 0; i < boundary.m_sink.m_points.size() - 1; i++) {
+		HeightMap::Coordinate p1 = boundary.m_sink.m_points[i];
+		HeightMap::Coordinate p2 = boundary.m_sink.m_points[i + 1];
 		sinkEdges[p1.m_x][p1.m_y][Edge::directionBetween(p1, p2)] = true;
 		sinkEdges[p2.m_x][p2.m_y][Edge::directionBetween(p2, p1)] = true;
 	}
@@ -141,7 +139,7 @@ InputGraph::InputGraph(const HeightMap& heightMap,
 
 	// main part: search through the area between the boundary edges
 	std::queue<Edge> edges;
-	Edge startEdge(bottom.m_points[0], bottom.m_points[1]);
+	Edge startEdge(boundary.m_bottom.m_points[1], boundary.m_bottom.m_points[0]);
 	edges.push(startEdge);
 	int vertex = vertexMap[startEdge.source.m_x][startEdge.source.m_y];
 	if (vertex == -1) {
@@ -189,12 +187,12 @@ InputGraph::InputGraph(const HeightMap& heightMap,
 			bool onSink =
 			        sinkEdges[edge.source.m_x][edge.source.m_y][direction];
 
-			bool originIsOnlySource = source.m_points.size() == 1 &&
-			        source.m_points[0].m_x == (*this)[origin].p.x &&
-			        source.m_points[0].m_y == (*this)[origin].p.y;
-			bool originIsOnlySink = sink.m_points.size() == 1 &&
-			        sink.m_points[0].m_x == (*this)[origin].p.x &&
-			        sink.m_points[0].m_y == (*this)[origin].p.y;
+			bool originIsOnlySource = boundary.m_source.m_points.size() == 1 &&
+			        boundary.m_source.m_points[0].m_x == (*this)[origin].p.x &&
+			        boundary.m_source.m_points[0].m_y == (*this)[origin].p.y;
+			bool originIsOnlySink = boundary.m_sink.m_points.size() == 1 &&
+			        boundary.m_sink.m_points[0].m_x == (*this)[origin].p.x &&
+			        boundary.m_sink.m_points[0].m_y == (*this)[origin].p.y;
 
 			if (i != 0 && (onTop || onBottom || onSource || onSink)) {
 				inside = !inside;
@@ -278,14 +276,14 @@ InputGraph::InputGraph(const HeightMap& heightMap,
 	}
 
 	// connect globalSource to all source vertices
-	for (auto c = source.m_points.rbegin(); c < source.m_points.rend(); c++) {
+	for (auto c = boundary.m_source.m_points.begin(); c < boundary.m_source.m_points.end(); c++) {
 		assert(vertexMap[(*c).m_x][(*c).m_y] != -1);
 		(*this)[globalSource].addAdjacency(vertexMap[(*c).m_x][(*c).m_y]);
 	}
 	(*this)[globalSource].addAdjacency(globalMaximum);
 
 	// connect globalSink to all sink vertices
-	for (auto c = sink.m_points.begin(); c < sink.m_points.end(); c++) {
+	for (auto c = boundary.m_sink.m_points.begin(); c < boundary.m_sink.m_points.end(); c++) {
 		assert(vertexMap[(*c).m_x][(*c).m_y] != -1);
 		(*this)[globalSink].addAdjacency(vertexMap[(*c).m_x][(*c).m_y]);
 	}
@@ -293,13 +291,13 @@ InputGraph::InputGraph(const HeightMap& heightMap,
 
 	// connect globalMaximum to all boundary vertices
 	(*this)[globalMaximum].addAdjacency(globalSource);
-	for (auto c = top.m_points.begin(); c < top.m_points.end(); c++) {
+	for (auto c = boundary.m_top.m_points.begin(); c < boundary.m_top.m_points.end(); c++) {
 		assert(vertexMap[(*c).m_x][(*c).m_y] != -1);
 		(*this)[globalMaximum].addAdjacency(vertexMap[(*c).m_x][(*c).m_y],
 		        false);
 	}
 	(*this)[globalMaximum].addAdjacency(globalSink);
-	for (auto c = bottom.m_points.rbegin(); c < bottom.m_points.rend(); c++) {
+	for (auto c = boundary.m_bottom.m_points.begin(); c < boundary.m_bottom.m_points.end(); c++) {
 		assert(vertexMap[(*c).m_x][(*c).m_y] != -1);
 		(*this)[globalMaximum].addAdjacency(vertexMap[(*c).m_x][(*c).m_y],
 		        true);

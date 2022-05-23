@@ -53,6 +53,7 @@ class RiverGui : public QMainWindow {
 		void openFrameNamed(const QString& fileName);
 
 		void openBoundary();
+		void saveBoundary();
 
 		void saveIpeImage();
 		void saveGraph();
@@ -130,6 +131,7 @@ class RiverGui : public QMainWindow {
 
 		QMenu* fileMenu;
 		QMenu* runMenu;
+		QMenu* editMenu;
 		QMenu* viewMenu;
 		QMenu* toolsMenu;
 		QMenu* helpMenu;
@@ -155,16 +157,15 @@ class RiverGui : public QMainWindow {
 		QAction* saveIpeAction;
 		QAction* saveGraphAction;
 		QAction* saveLinkSequenceAction;
+		QAction* saveBoundaryAction;
 		QAction* quitAction;
-		QAction* showMapAction;
-		QAction* showWaterPlaneAction;
-		QAction* showOutlinesAction;
-		QAction* showShadingAction;
+		QAction* showBackgroundAction;
 		QAction* showInputDcelAction;
 		QAction* showMsComplexAction;
 		QAction* msEdgesStraightAction;
 		QAction* showStriationAction;
 		QAction* showNetworkAction;
+		QAction* editBoundaryAction;
 		QAction* computeAction;
 		QAction* zoomInAction;
 		QAction* zoomOutAction;

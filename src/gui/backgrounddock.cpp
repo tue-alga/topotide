@@ -9,72 +9,138 @@
 BackgroundDock::BackgroundDock(QWidget* parent) :
         QDockWidget("Background settings", parent) {
 
-	settingsWidget = new QWidget(this);
+	m_settingsWidget = new QWidget(this);
 	auto* layout = new QGridLayout();
-	settingsWidget->setLayout(layout);
-	setWidget(settingsWidget);
+	m_settingsWidget->setLayout(layout);
+	setWidget(m_settingsWidget);
 
-	layout->setRowStretch(0, 1);
-	layout->setRowStretch(1, 1);
-	layout->setRowStretch(2, 0);
+	m_showElevationBox = new QCheckBox("Show elevation", m_settingsWidget);
+	m_showElevationBox->setChecked(true);
+	connect(m_showElevationBox, &QCheckBox::stateChanged,
+	        this, &BackgroundDock::showElevationChanged);
+	layout->addWidget(m_showElevationBox, 0, 0, Qt::AlignLeft | Qt::AlignVCenter);
 
-	// first column: water level slider and δ-slider
-	layout->setColumnStretch(0, 1);
+	m_elevationSettings = new QWidget(this);
+	layout->addWidget(m_elevationSettings, 1, 0, Qt::AlignLeft | Qt::AlignVCenter);
 
-	waterLevelSlider = new QSlider(Qt::Horizontal, settingsWidget);
-	waterLevelSlider->setRange(0, 256 * 256 * 256);
-	waterLevelSlider->setSingleStep(256 * 8);
-	waterLevelSlider->setPageStep(256 * 256 * 8);
-	waterLevelSlider->setValue(128 * 256 * 256);
-	waterLevelSlider->setToolTip("<p><b>Water level</b></p>"
+	QHBoxLayout* elevationLayout = new QHBoxLayout(m_elevationSettings);
+	elevationLayout->setContentsMargins(30, 0, 0, 0);
+	QLabel* colorSchemeLabel = new QLabel("Color scheme:");
+	connect(m_showElevationBox, &QCheckBox::stateChanged,
+	        colorSchemeLabel, &QLabel::setEnabled);
+	elevationLayout->addWidget(colorSchemeLabel);
+	m_colorSchemeBox = new QComboBox(m_elevationSettings);
+	connect(m_showElevationBox, &QCheckBox::stateChanged,
+	        m_colorSchemeBox, &QComboBox::setEnabled);
+	m_colorSchemeBox->addItem("Grayscale", "grayscale");
+	m_colorSchemeBox->addItem("Blue to yellow", "blue-yellow");
+	m_colorSchemeBox->addItem("Purple", "purples");
+	elevationLayout->addWidget(m_colorSchemeBox);
+	connect(m_colorSchemeBox,
+	        static_cast<void(QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
+	        [=](const int item) {
+				emit themeChanged(theme());
+			});
+
+	m_showWaterLevelBox = new QCheckBox("Show water level", m_settingsWidget);
+	m_showWaterLevelBox->setChecked(true);
+	connect(m_showWaterLevelBox, &QCheckBox::stateChanged,
+	        this, &BackgroundDock::showWaterPlaneChanged);
+	layout->addWidget(m_showWaterLevelBox, 2, 0, Qt::AlignLeft | Qt::AlignVCenter);
+
+	m_waterLevelSettings = new QWidget(this);
+	layout->addWidget(m_waterLevelSettings, 3, 0, Qt::AlignLeft | Qt::AlignVCenter);
+
+	QHBoxLayout* waterLevelLayout = new QHBoxLayout(m_waterLevelSettings);
+	waterLevelLayout->setContentsMargins(30, 0, 0, 0);
+	QLabel* waterLevelLabel = new QLabel("Level:");
+	connect(m_showWaterLevelBox, &QCheckBox::stateChanged,
+	        waterLevelLabel, &QLabel::setEnabled);
+	waterLevelLayout->addWidget(waterLevelLabel);
+	m_waterLevelSlider = new QSlider(Qt::Horizontal, m_settingsWidget);
+	connect(m_showWaterLevelBox, &QCheckBox::stateChanged,
+	        m_waterLevelSlider, &QSlider::setEnabled);
+	m_waterLevelSlider->setRange(0, 256 * 256 * 256);
+	m_waterLevelSlider->setSingleStep(256 * 8);
+	m_waterLevelSlider->setPageStep(256 * 256 * 8);
+	m_waterLevelSlider->setValue(128 * 256 * 256);
+	m_waterLevelSlider->setToolTip("<p><b>Water level</b></p>"
 	                             "<p>This changes the water level, and can be used for inspecting the river DEM.</p>"
 	                             "<p>This setting is used only for visualization purposes, and does not influence the resulting network.</p>");
-	layout->addWidget(waterLevelSlider, 0, 0, Qt::AlignBottom);
+	waterLevelLayout->addWidget(m_waterLevelSlider);
 
-	waterLevelLabel = new QLabel();
-	layout->addWidget(waterLevelLabel, 1, 0, Qt::AlignHCenter | Qt::AlignTop);
-	connect(waterLevelSlider, &QSlider::valueChanged,
+	m_waterLevelValueLabel = new QLabel();
+	connect(m_showWaterLevelBox, &QCheckBox::stateChanged,
+	        m_waterLevelValueLabel, &QLabel::setEnabled);
+	waterLevelLayout->addWidget(m_waterLevelValueLabel);
+	connect(m_waterLevelSlider, &QSlider::valueChanged,
 	        this, &BackgroundDock::updateLabels);
-	connect(waterLevelSlider, &QSlider::valueChanged,
+	connect(m_waterLevelSlider, &QSlider::valueChanged,
 	        this, &BackgroundDock::waterLevelChanged);
+	connect(m_colorSchemeBox,
+	        static_cast<void(QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
+	        [=](const int item) {
+				emit themeChanged(theme());
+			});
 
-	// second column: water slope dial
-	layout->setColumnStretch(1, 0);
+	m_waterResetButton = new QPushButton(m_settingsWidget);
+	connect(m_showWaterLevelBox, &QCheckBox::stateChanged,
+	        m_waterResetButton, &QPushButton::setEnabled);
+	m_waterResetButton->setText("Reset");
+	m_waterResetButton->setToolTip("<p><b>Reset water height and slope</b></p>"
+							"<p>This resets the water height and the water "
+							"slope to their original values.</p>");
+	waterLevelLayout->addWidget(m_waterResetButton);
 
-	waterSlopeDial = new QDial(settingsWidget);
-	waterSlopeDial->setMinimumSize(100, 100);
-	waterSlopeDial->setRange(-400, 400);
-	waterSlopeDial->setToolTip("<p><b>Water slope</b></p>"
-	                           "<p>This changes the water slope, and can be used for detrending the river.</p>"
-	                           "<p>This setting is used only for visualization purposes, and does not influence the resulting network.</p>");
-	layout->addWidget(waterSlopeDial, 0, 1, 2, 1, Qt::AlignHCenter);
+	connect(m_waterResetButton, &QPushButton::pressed, this,
+			&BackgroundDock::resetSettings);
 
-	connect(waterSlopeDial, &QSlider::valueChanged,
-	        this, &BackgroundDock::waterSlopeChanged);
+	m_showContoursBox = new QCheckBox("Show contours", m_settingsWidget);
+	m_showContoursBox->setChecked(true);
+	connect(m_showContoursBox, &QCheckBox::stateChanged,
+	        this, &BackgroundDock::showContoursChanged);
+	layout->addWidget(m_showContoursBox, 5, 0, Qt::AlignLeft | Qt::AlignVCenter);
 
-	resetButton = new QPushButton(settingsWidget);
-	resetButton->setText("Reset");
-	resetButton->setToolTip("<p><b>Reset water height and slope</b></p>"
-	                        "<p>This resets the water height and the water slope to their original values.</p>");
-	layout->addWidget(resetButton, 2, 0, 1, 2, Qt::AlignHCenter);
+	m_showShadingBox = new QCheckBox("Show shading", m_settingsWidget);
+	connect(m_showShadingBox, &QCheckBox::stateChanged,
+	        this, &BackgroundDock::showShadingChanged);
+	layout->addWidget(m_showShadingBox, 7, 0, Qt::AlignLeft | Qt::AlignVCenter);
 
-	connect(resetButton, &QPushButton::pressed,
-	        this, &BackgroundDock::resetSettings);
+	layout->setRowStretch(8, 1);
 
 	updateLabels();
 }
 
+bool BackgroundDock::showElevation() {
+	return m_showElevationBox->isChecked();
+}
+
+QString BackgroundDock::theme() {
+	return m_colorSchemeBox->currentData().toString();
+}
+
+bool BackgroundDock::showWaterPlane() {
+	return m_showWaterLevelBox->isChecked();
+}
+
 int BackgroundDock::waterLevel() {
-	return waterLevelSlider->value();
+	return m_waterLevelSlider->value();
 }
 
 int BackgroundDock::waterSlope() {
-	return waterSlopeDial->value();
+	return 0;
+}
+
+bool BackgroundDock::showContours() {
+	return m_showContoursBox->isChecked();
+}
+
+bool BackgroundDock::showShading() {
+	return m_showShadingBox->isChecked();
 }
 
 void BackgroundDock::resetSettings() {
-	waterLevelSlider->setValue(128 * 256 * 256);
-	waterSlopeDial->setValue(0);
+	m_waterLevelSlider->setValue(128 * 256 * 256);
 }
 
 void BackgroundDock::setUnits(Units units) {
@@ -85,7 +151,7 @@ void BackgroundDock::setUnits(Units units) {
 void BackgroundDock::updateLabels() {
 	QString elevationString =
 	        UnitsHelper::formatElevation(
-	            m_units.toRealElevation(waterLevelSlider->value()));
-	waterLevelLabel->setText(QString("Water level: <b>%1</b>")
+	            m_units.toRealElevation(m_waterLevelSlider->value()));
+	m_waterLevelValueLabel->setText(QString("%1")
 	                         .arg(elevationString));
 }

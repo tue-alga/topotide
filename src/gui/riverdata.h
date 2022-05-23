@@ -89,7 +89,13 @@ class RiverData : public QObject {
 		/**
 		 * The boundary of the river area.
 		 */
-		HeightMap::Boundary boundary;
+		Boundary boundary;
+
+		/**
+		 * The boundary of the river area in rasterized form (see
+		 * `Boundary::rasterize()`).
+		 */
+		Boundary boundaryRasterized;
 
 		/**
 		 * The input graph.
@@ -198,6 +204,14 @@ class RiverData : public QObject {
 		 * \param onlyNetwork If \c true, deletes only the network.
 		 */
 		void deleteEverything(bool onlyNetwork);
+
+		/**
+		 * Sets the boundary of thhe river. This updates both `boundary` and
+		 * `boundaryRasterized`.
+		 *
+		 * \param b The new boundary.
+		 */
+		void setBoundary(Boundary& b);
 
 	public slots:
 
