@@ -42,10 +42,10 @@ class RiverWidget : public QOpenGLWidget {
 		bool drawBackground() const;
 		QString theme() const;
 		int waterLevel() const;
-		int waterSlope() const;
 		bool showElevation() const;
 		bool showWaterPlane() const;
 		bool showOutlines() const;
+		int contourCount() const;
 		bool showShading() const;
 		bool showInputDcel() const;
 		bool showMsComplex() const;
@@ -61,10 +61,10 @@ class RiverWidget : public QOpenGLWidget {
 		void setDrawBackground(bool drawBackground);
 		void setTheme(QString theme);
 		void setWaterLevel(int waterLevel);
-		void setWaterSlope(int waterSlope);
 		void setShowElevation(bool showElevation);
 		void setShowWaterPlane(bool showWaterPlane);
 		void setShowOutlines(bool showOutlines);
+		void setContourCount(int contourCount);
 		void setShowShading(bool showShading);
 		void setShowInputDcel(bool showInputDcel);
 		void setShowMsComplex(bool showMsComplex);
@@ -163,11 +163,11 @@ class RiverWidget : public QOpenGLWidget {
 
 		QString m_theme = "blue-yellow";
 		int m_waterLevel = 0;
-		int m_waterSlope = 0;
 		bool m_drawBackground = true;
 		bool m_showElevation = true;
 		bool m_showWaterPlane = true;
 		bool m_showOutlines = true;
+		int m_contourCount = 20;
 		bool m_showShading = false;
 		bool m_showInputDcel = false;
 		bool m_showMsComplex = false;

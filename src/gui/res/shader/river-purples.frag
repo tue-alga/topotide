@@ -15,7 +15,6 @@ uniform sampler2D tex;
  * The water level.
  */
 uniform float waterLevel;
-uniform float waterSlope;
 
 /**
  * Whether to show the background map.
@@ -26,6 +25,11 @@ uniform bool showMap;
  * Whether to show contour lines.
  */
 uniform bool showOutlines;
+
+/**
+ * How many contours to render.
+ */
+uniform int contourCount;
 
 /**
  * Whether to show hill-shading.
@@ -92,8 +96,7 @@ float elevation(vec2 p) {
 }
 
 float elevationDetrended(vec2 p) {
-	return elevation(p) - waterLevel +
-	        (-0.5 + (matrix * vec3(p.x, p.y, 1)).x) * waterSlope;
+	return elevation(p) - waterLevel;
 }
 
 vec3 waterColor(float value) {
@@ -108,10 +111,10 @@ vec2 texCoord(vec2 pos) {
 
 bool isOnContour(vec2 pos) {
 	bool onOutline = false;
-	int value = int(20 * elevation(pos.xy));
+	int value = int(contourCount * elevation(pos.xy));
 	for (int dx = -1; dx <= 1; dx++) {
 		for (int dy = -1; dy <= 1; dy++) {
-			int valueAround = int(20 * elevation(
+			int valueAround = int(contourCount * elevation(
 			            pos.xy + vec2(dx * lineWidth, dy * lineHeight)));
 			onOutline = onOutline || (value != valueAround);
 		}

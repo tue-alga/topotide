@@ -71,6 +71,9 @@ void RiverGui::createGui() {
 	connect(backgroundDock, &BackgroundDock::showContoursChanged,
 	        map, &RiverWidget::setShowOutlines);
 	map->setShowOutlines(backgroundDock->showContours());
+	connect(backgroundDock, &BackgroundDock::contourCountChanged,
+	        map, &RiverWidget::setContourCount);
+	map->setContourCount(backgroundDock->contourCount());
 	connect(backgroundDock, &BackgroundDock::showShadingChanged,
 	        map, &RiverWidget::setShowShading);
 	map->setShowShading(backgroundDock->showShading());
@@ -116,6 +119,7 @@ void RiverGui::createGui() {
 	connect(settingsDock, &SettingsDock::msThresholdChanged, [&] {
 		map->setNetworkDelta(settingsDock->msThreshold());
 	});
+	map->setNetworkDelta(settingsDock->msThreshold());
 	connect(this, &RiverGui::unitsChanged,
 	        settingsDock, &SettingsDock::setUnits);
 	addDockWidget(Qt::TopDockWidgetArea, settingsDock);

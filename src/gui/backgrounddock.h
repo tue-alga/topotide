@@ -14,8 +14,8 @@
 #include "../units.h"
 
 /**
- * A QDockWidget that allows the user to set the water level
- * and the water slope.
+ * A QDockWidget that allows the user to change how the background map is
+ * visualized.
  */
 class BackgroundDock : public QDockWidget {
 
@@ -54,16 +54,16 @@ class BackgroundDock : public QDockWidget {
 		int waterLevel();
 
 		/**
-		 * Returns the currently set water slope.
-		 * \return The water slope.
-		 */
-		int waterSlope();
-
-		/**
 		 * Returns whether the contours should be shown.
 		 * \return The value of the show contours input.
 		 */
 		bool showContours();
+
+		/**
+		 * Returns the number of contours that should be drawn.
+		 * \return The value of the number-of-contours input.
+		 */
+		int contourCount();
 
 		/**
 		 * Returns whether the shading should be shown.
@@ -79,9 +79,9 @@ class BackgroundDock : public QDockWidget {
 		void showElevationChanged(bool showElevation);
 		void showWaterPlaneChanged(bool showWaterPlane);
 		void showContoursChanged(bool showContours);
+		void contourCountChanged(int contourCount);
 		void showShadingChanged(bool showShading);
 		void waterLevelChanged(int level);
-		void waterSlopeChanged(int slope);
 		void themeChanged(QString theme);
 
 	private:
@@ -96,7 +96,6 @@ class BackgroundDock : public QDockWidget {
 		QLabel* m_waterLevelLabel;
 		QSlider* m_waterLevelSlider;
 		QLabel* m_waterLevelValueLabel;
-		QDial* m_waterSlopeDial;
 		QPushButton* m_waterResetButton;
 
 		QCheckBox* m_showContoursBox;

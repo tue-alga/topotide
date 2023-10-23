@@ -87,9 +87,8 @@ BackgroundDock::BackgroundDock(QWidget* parent) :
 	connect(m_showWaterLevelBox, &QCheckBox::stateChanged,
 	        m_waterResetButton, &QPushButton::setEnabled);
 	m_waterResetButton->setText("Reset");
-	m_waterResetButton->setToolTip("<p><b>Reset water height and slope</b></p>"
-							"<p>This resets the water height and the water "
-							"slope to their original values.</p>");
+	m_waterResetButton->setToolTip("<p><b>Reset water height</b></p>"
+							"<p>This resets the water height to its original value.</p>");
 	waterLevelLayout->addWidget(m_waterResetButton);
 
 	connect(m_waterResetButton, &QPushButton::pressed, this,
@@ -100,6 +99,27 @@ BackgroundDock::BackgroundDock(QWidget* parent) :
 	connect(m_showContoursBox, &QCheckBox::stateChanged,
 	        this, &BackgroundDock::showContoursChanged);
 	layout->addWidget(m_showContoursBox, 5, 0, Qt::AlignLeft | Qt::AlignVCenter);
+
+	m_contourSettings = new QWidget(this);
+	layout->addWidget(m_contourSettings, 6, 0, Qt::AlignLeft | Qt::AlignVCenter);
+
+	QHBoxLayout* contourLayout = new QHBoxLayout(m_contourSettings);
+	contourLayout->setContentsMargins(30, 0, 0, 0);
+	QLabel* contourCountLabel = new QLabel("Number of contours:");
+	connect(m_showContoursBox, &QCheckBox::stateChanged,
+	        contourCountLabel, &QLabel::setEnabled);
+	contourLayout->addWidget(contourCountLabel);
+	m_contourCountBox = new QSpinBox(m_contourSettings);
+	connect(m_showContoursBox, &QCheckBox::stateChanged,
+	        m_contourCountBox, &QComboBox::setEnabled);
+	m_contourCountBox->setValue(20);
+	m_contourCountBox->setMinimum(1);
+	m_contourCountBox->setMaximum(100);
+	contourLayout->addWidget(m_contourCountBox);
+	connect(m_contourCountBox, QOverload<int>::of(&QSpinBox::valueChanged),
+	        [this](int v) {
+		emit contourCountChanged(contourCount());
+	});
 
 	m_showShadingBox = new QCheckBox("Show shading", m_settingsWidget);
 	connect(m_showShadingBox, &QCheckBox::stateChanged,
@@ -127,12 +147,12 @@ int BackgroundDock::waterLevel() {
 	return m_waterLevelSlider->value();
 }
 
-int BackgroundDock::waterSlope() {
-	return 0;
-}
-
 bool BackgroundDock::showContours() {
 	return m_showContoursBox->isChecked();
+}
+
+int BackgroundDock::contourCount() {
+	return m_contourCountBox->value();
 }
 
 bool BackgroundDock::showShading() {

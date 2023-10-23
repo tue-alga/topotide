@@ -201,9 +201,9 @@ void RiverWidget::paintGL() {
 	// initialize shader variables
 	program->bind();
 	program->setUniformValue("waterLevel", (float) m_waterLevel / (256 * 256 * 256));
-	program->setUniformValue("waterSlope", (float) m_waterSlope / 1000);
 	program->setUniformValue("showMap", m_showElevation);
 	program->setUniformValue("showOutlines", m_showOutlines);
+	program->setUniformValue("contourCount", m_contourCount);
 	program->setUniformValue("showShading", m_showShading);
 	program->setUniformValue("showWaterPlane", m_showWaterPlane);
 	program->setUniformValue("lineWidth", 1.0f / width());
@@ -885,15 +885,6 @@ void RiverWidget::setWaterLevel(int waterLevel) {
 	update();
 }
 
-int RiverWidget::waterSlope() const {
-	return m_waterSlope;
-}
-
-void RiverWidget::setWaterSlope(int waterSlope) {
-	m_waterSlope = waterSlope;
-	update();
-}
-
 bool RiverWidget::showWaterPlane() const {
 	return m_showWaterPlane;
 }
@@ -918,6 +909,15 @@ bool RiverWidget::showOutlines() const {
 
 void RiverWidget::setShowOutlines(bool showOutlines) {
 	m_showOutlines = showOutlines;
+	update();
+}
+
+int RiverWidget::contourCount() const {
+	return m_contourCount;
+}
+
+void RiverWidget::setContourCount(int contourCount) {
+	m_contourCount = contourCount;
 	update();
 }
 
