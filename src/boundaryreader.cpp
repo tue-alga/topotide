@@ -41,10 +41,10 @@ BoundaryReader::readBoundary(const QString& fileName,
 		return Boundary(map);
 	}
 
-	int topLength = numbers[2].toInt(&ok);
+	int topLength = numbers[1].toInt(&ok);
 	if (!ok) {
 		error = QString("Top length should be an integer (was [%1])").
-		        arg(numbers[2]);
+		        arg(numbers[1]);
 		return Boundary(map);
 	}
 	if (topLength <= 0) {
@@ -53,10 +53,10 @@ BoundaryReader::readBoundary(const QString& fileName,
 		return Boundary(map);
 	}
 
-	int sinkLength = numbers[1].toInt(&ok);
+	int sinkLength = numbers[2].toInt(&ok);
 	if (!ok) {
 		error = QString("Sink length should be an integer (was [%1])").
-		        arg(numbers[1]);
+		        arg(numbers[2]);
 		return Boundary(map);
 	}
 	if (sinkLength <= 0) {
