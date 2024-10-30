@@ -1,10 +1,11 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.15)
 
-project(ttga)
-set(CMAKE_CXX_STANDARD 11)
+project(topotide
+	DESCRIPTION "TopoTide"
+	HOMEPAGE_URL "https://github.com/tue-alga/ttga"
+	LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
 
-option(WITH_KCRASH "KCrash integration" OFF)
-option(WITH_IPELIB "Ipe integration - needs Ipelib" OFF)
 option(DISABLE_SLOW_ASSERTS "Disable slow asserts in debug mode" OFF)
 option(BUILD_TESTS "Build the unit tests" ON)
 
@@ -13,22 +14,15 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt5Widgets REQUIRED)
-
-if(WITH_KCRASH)
-	find_package(KF5Crash REQUIRED)
-	add_definitions(-DWITH_KCRASH)
-endif(WITH_KCRASH)
-
-if(WITH_IPELIB)
-	set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
-	find_package(Ipelib REQUIRED)
-	include_directories(${Ipelib_INCLUDE_DIRS})
-	add_definitions(-DWITH_IPELIB)
-endif(WITH_IPELIB)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets OpenGL OpenGLWidgets)
+find_package(GDAL REQUIRED)
 
 if(DISABLE_SLOW_ASSERTS)
 	add_definitions(-DDISABLE_SLOW_ASSERTS)
 endif(DISABLE_SLOW_ASSERTS)
 
-add_subdirectory(src)
+add_subdirectory(lib)
+add_subdirectory(gui)
+if(BUILD_TESTS)
+	add_subdirectory(test)
+endif(BUILD_TESTS)
