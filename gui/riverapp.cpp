@@ -18,7 +18,7 @@
  */
 int main(int argc, char* argv[]) {
 
-	const QString APP_VERSION = "2.0.0";
+	const QString APP_VERSION = "2.0.1";
 
 	if (argc <= 1) {
 		QApplication a(argc, argv);

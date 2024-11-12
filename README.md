@@ -9,7 +9,7 @@ TopoTide is a tool which helps the analysis of river systems, in particular, bra
 
 TopoTide is available for Windows and Linux systems, and is free software licensed under the GNU General Public License version 3.
 
-In the `src` directory, the actual C++ implementation can be found. The directory `src/gui` contains a GUI for visualizing the output, written in Qt, which can also be run in batch mode using a CLI. The directory `src/test` contains unit tests for essential parts of the implementation. More documentation on how to use TopoTide can be found in the manual in the `manual` directory.
+In the `lib` directory, the C++ implementation of the algorithms can be found. The directory `gui` contains a GUI for visualizing the output, written in Qt, which can also be run in batch mode using a CLI. The directory `test` contains unit tests for essential parts of the implementation. More documentation on how to use TopoTide can be found in the manual in the `manual` directory.
 
 
 ## Dependencies
@@ -84,7 +84,7 @@ Usage
 Execute by running
 
 ```shell
-$ ./src/gui/topotide               # run GUI
-$ ./src/gui/topotide --help        # run batch mode
-$ ./src/test/topotide_test         # run unit tests
+$ build/gui/topotide               # run GUI
+$ build/gui/topotide --help        # run batch mode
+$ build/test/topotide_test         # run unit tests
 ```

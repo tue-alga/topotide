@@ -35,6 +35,8 @@ void MsComplexCreator::create() {
 		if (dcel->isCritical(e) && e.twin().data().msVertex == -1) {
 			MsComplex::Vertex newV = msc->addVertex();
 			newV.data().p = e.data().p;
+			// saddles get assigned the height of their highest endpoint
+			newV.data().p.h = std::max(e.origin().data().p.h, e.destination().data().p.h);
 			newV.data().inputDcelSimplex = e;
 			newV.data().type = VertexType::saddle;
 			e.data().msVertex = newV.id();

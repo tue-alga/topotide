@@ -107,7 +107,7 @@ void main() {
 	vec2 tPos = texCoord(pos.xy);
 	bool inBounds = tPos.x >= .5f / texWidth && tPos.x <= 1 - .5f / texWidth &&
 			tPos.y >= .5f / texHeight && tPos.y <= 1 - .5f / texHeight;
-	bool isNoData = texture(tex, tPos).a < 1f;
+	bool isNoData = texture(tex, tPos).a < 1.0f;
 
 	if (!inBounds || isNoData) {
 		color = vec3(1);

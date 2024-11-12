@@ -106,7 +106,7 @@ vec3 interpolate(float p, float p1, float p2, vec3 v1, vec3 v2) {
 }
 
 vec3 c(int r, int g, int b) {
-	return vec3(r / 255f, g / 255f, b / 255f);
+	return vec3(r / 255.0f, g / 255.0f, b / 255.0f);
 }
 
 /**
@@ -116,7 +116,7 @@ void main() {
 	vec2 tPos = texCoord(pos.xy);
 	bool inBounds = tPos.x >= .5f / texWidth && tPos.x <= 1 - .5f / texWidth &&
 			tPos.y >= .5f / texHeight && tPos.y <= 1 - .5f / texHeight;
-	bool isNoData = texture(tex, tPos).a < 1f;
+	bool isNoData = texture(tex, tPos).a < 1.0f;
 
 	if (!inBounds || isNoData) {
 		color = vec3(1);
@@ -127,20 +127,20 @@ void main() {
 	if (showWaterPlane && waterLevel > height) {
 		color = waterColor(waterLevel - height);
 	} else if (showMap) {
-		if (height >= 1f) {
-			color = vec3(1f);
-		} else if (height >= 5/6f) {
-			color = interpolate(height, 5/6f, 6/6f, c(255, 255, 191), c(254, 224, 144));
-		} else if (height >= 4/6f) {
-			color = interpolate(height, 4/6f, 5/6f, c(224, 243, 248), c(255, 255, 191));
-		} else if (height >= 3/6f) {
-			color = interpolate(height, 3/6f, 4/6f, c(171, 217, 233), c(224, 243, 248));
-		} else if (height >= 2/6f) {
-			color = interpolate(height, 2/6f, 3/6f, c(116, 173, 209), c(171, 217, 233));
-		} else if (height >= 1/6f) {
-			color = interpolate(height, 1/6f, 2/6f, c(69, 117, 180), c(116, 173, 209));
+		if (height >= 1.0f) {
+			color = vec3(1.0f);
+		} else if (height >= 5/6.0f) {
+			color = interpolate(height, 5/6.0f, 6/6.0f, c(255, 255, 191), c(254, 224, 144));
+		} else if (height >= 4/6.0f) {
+			color = interpolate(height, 4/6.0f, 5/6.0f, c(224, 243, 248), c(255, 255, 191));
+		} else if (height >= 3/6.0f) {
+			color = interpolate(height, 3/6.0f, 4/6.0f, c(171, 217, 233), c(224, 243, 248));
+		} else if (height >= 2/6.0f) {
+			color = interpolate(height, 2/6.0f, 3/6.0f, c(116, 173, 209), c(171, 217, 233));
+		} else if (height >= 1/6.0f) {
+			color = interpolate(height, 1/6.0f, 2/6.0f, c(69, 117, 180), c(116, 173, 209));
 		} else {
-			color = interpolate(height, 0/6f, 1/6f, c(49, 54, 149), c(69, 117, 180));
+			color = interpolate(height, 0/6.0f, 1/6.0f, c(49, 54, 149), c(69, 117, 180));
 		}
 	} else {
 		color = vec3(1);

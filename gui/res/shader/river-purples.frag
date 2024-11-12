@@ -106,7 +106,7 @@ vec3 interpolate(float p, float p1, float p2, vec3 v1, vec3 v2) {
 }
 
 vec3 c(int r, int g, int b) {
-	return vec3(r / 255f, g / 255f, b / 255f);
+	return vec3(r / 255.0f, g / 255.0f, b / 255.0f);
 }
 
 /**
@@ -116,7 +116,7 @@ void main() {
 	vec2 tPos = texCoord(pos.xy);
 	bool inBounds = tPos.x >= .5f / texWidth && tPos.x <= 1 - .5f / texWidth &&
 			tPos.y >= .5f / texHeight && tPos.y <= 1 - .5f / texHeight;
-	bool isNoData = texture(tex, tPos).a < 1f;
+	bool isNoData = texture(tex, tPos).a < 1.0f;
 
 	if (!inBounds || isNoData) {
 		color = vec3(1);
@@ -127,12 +127,12 @@ void main() {
 	if (showWaterPlane && waterLevel > height) {
 		color = waterColor(waterLevel - height);
 	} else if (showMap) {
-		if (height >= 1f) {
-			color = vec3(1f);
-		} else if (height >= 2/3f) {
-			color = interpolate(height, 2/3f, 1f, c(192, 212, 230), c(241, 240, 246));
+		if (height >= 1.0f) {
+			color = vec3(1.0f);
+		} else if (height >= 2/3.0f) {
+			color = interpolate(height, 2/3.0f, 1.0f, c(192, 212, 230), c(241, 240, 246));
 		} else {
-			color = interpolate(height, 0f, 2/3f, c(63, 1, 125), c(192, 212, 230));
+			color = interpolate(height, 0.0f, 2/3.0f, c(63, 1, 125), c(192, 212, 230));
 		}
 	} else {
 		color = vec3(1);
