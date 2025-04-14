@@ -8,7 +8,7 @@
 /// A two-dimensional heightmap that stores elevation data of a river.
 ///
 /// Each elevation value is stored as a `double`. Values can be marked as nodata
-/// by using positive infinity (see \ref nodata).
+/// by using NaN (see \ref nodata).
  
 /* TODO move to RiverWidget
  * This is a wrapper around a QImage in which the elevation data is stored.
@@ -24,7 +24,10 @@ class HeightMap {
 
 	public:
 		/// The constant used to mark nodata values.
-		static constexpr double nodata = std::numeric_limits<double>::infinity();
+		///
+		/// \warning As this is NaN, comparing values to this constant does not
+		/// work (always returns false). Use `std::isnan` instead.
+		static constexpr double nodata = std::numeric_limits<double>::quiet_NaN();
 		
 		/// Coordinate of one height measurement in the heightmap.
 		class Coordinate {
@@ -51,6 +54,8 @@ class HeightMap {
 				/// The coordinates of the midpoint are rounded down to the
 				/// nearest integer, if necessary.
 				static Coordinate midpointBetween(Coordinate c1, Coordinate c2);
+
+				int squaredDistanceTo(Coordinate other) const;
 		};
 
 		/// Constructs an empty heightmap with width and height 0. Such an empty
@@ -88,6 +93,9 @@ class HeightMap {
 		/// Checks whether the given coordinate lies within the bounds of this
 		/// heightmap.
 		bool isInBounds(Coordinate c) const;
+		/// Returns the closest in-bounds coordinate to the given (possibly
+		/// out-of-bounds) coordinate.
+		Coordinate clampToBounds(Coordinate c) const;
 
 		/// Computes the lowest (non-nodata) elevation in this heightmap.
 		double minimumElevation() const;

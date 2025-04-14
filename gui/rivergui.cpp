@@ -13,17 +13,23 @@
 #include <QStatusBar>
 #include <QString>
 #include <QStyle>
+#include <QToolButton>
 
+#include "backgroundthread.h"
 #include "boundaryreader.h"
 #include "boundarywriter.h"
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+#include "fingerfinder.h"
+#include "gradientfieldsimplifier.h"
+#endif
+#include "graphwriter.h"
 #include "io/esrigridreader.h"
+#include "io/esrigridwriter.h"
 #include "io/gdalreader.h"
 #include "io/textfilereader.h"
 #include "linksequence.h"
-
-#include "backgroundthread.h"
-#include "graphwriter.h"
 #include "linksequencewriter.h"
+#include "mergetreedock.h"
 #include "uihelper.h"
 #include "unitsdock.h"
 
@@ -43,15 +49,27 @@ void RiverGui::createGui() {
 	// river map
 	map = new RiverWidget();
 	setCentralWidget(map);
+	connect(map, &RiverWidget::boundaryEdited, [&](std::optional<Boundary> boundary) {
+		if (boundary) {
+			m_riverData->setBoundary(*boundary);
+		}
+		updateActions();
+	});
+	connect(map, &RiverWidget::statusMessage, statusBar(), [this](QString message) {
+		if (message == "") {
+			statusBar()->clearMessage();
+		} else {
+			statusBar()->showMessage(message);
+		}
+	});
 
 	// background dock
 	backgroundDock = new BackgroundDock(this);
 	connect(backgroundDock, &BackgroundDock::showElevationChanged,
 	        map, &RiverWidget::setShowElevation);
 	map->setShowElevation(backgroundDock->showElevation());
-	connect(backgroundDock, &BackgroundDock::themeChanged,
-	        map, &RiverWidget::setTheme);
-	map->setTheme(backgroundDock->theme());
+	connect(backgroundDock, &BackgroundDock::colorRampChanged,
+	        map, &RiverWidget::setColorRamp);
 	connect(backgroundDock, &BackgroundDock::showWaterPlaneChanged,
 	        map, &RiverWidget::setShowWaterPlane);
 	map->setShowWaterPlane(backgroundDock->showWaterPlane());
@@ -72,25 +90,35 @@ void RiverGui::createGui() {
 	// units dock
 	unitsDock = new UnitsDock(this);
 	connect(unitsDock, &UnitsDock::unitsChanged, [this](Units units) {
-		bool needToRecompute =
-		        m_riverData->units().m_xResolution != units.m_xResolution ||
-		        m_riverData->units().m_yResolution != units.m_yResolution;
 		m_riverData->units() = units;
 		map->setUnits(units);
 		settingsDock->setUnits(units);
 		coordinateLabel->setUnits(units);
-		if (needToRecompute) {
-			markComputationNeeded(false);
-		}
 	});
 	addDockWidget(Qt::TopDockWidgetArea, unitsDock);
+
+	// merge tree dock
+	mergeTreeDock = new MergeTreeDock(this);
+	addDockWidget(Qt::RightDockWidgetArea, mergeTreeDock);
+	mergeTreeDock->setColorRamp(backgroundDock->colorRamp());
+	connect(backgroundDock, &BackgroundDock::colorRampChanged,
+	        mergeTreeDock, &MergeTreeDock::setColorRamp);
+	connect(mergeTreeDock, &MergeTreeDock::pointToHighlightChanged,
+	        map, &RiverWidget::setPointToHighlight);
+	connect(mergeTreeDock, &MergeTreeDock::hoveredHeightChanged,
+	        map, &RiverWidget::setContourLevel);
+	connect(mergeTreeDock, &MergeTreeDock::hoveredSubtreeMaskChanged,
+	        map, &RiverWidget::setContourMask);
+	mergeTreeDock->hide();
 
 	// settings dock
 	settingsDock = new SettingsDock(this);
 	connect(settingsDock, &SettingsDock::msThresholdChanged, [&] {
 		map->setNetworkDelta(settingsDock->msThreshold());
+		mergeTreeDock->setDelta(settingsDock->msThreshold());
 	});
 	map->setNetworkDelta(settingsDock->msThreshold());
+	mergeTreeDock->setDelta(settingsDock->msThreshold());
 	addDockWidget(Qt::TopDockWidgetArea, settingsDock);
 
 	// progress viewer
@@ -103,7 +131,7 @@ void RiverGui::createGui() {
 	connect(timeDock, &TimeDock::frameChanged, [this](int frame) {
 		m_frame = frame;
 		map->setRiverFrame(activeFrame());
-		m_computationNeeded = true;
+		mergeTreeDock->setMergeTree(activeFrame()->m_mergeTree);
 		updateActions();
 	});
 
@@ -111,49 +139,87 @@ void RiverGui::createGui() {
 	coordinateLabel = new CoordinateLabel(this);
 	statusBar()->addPermanentWidget(coordinateLabel);
 	connect(map, &RiverWidget::hoveredCoordinateChanged,
-	        coordinateLabel, &CoordinateLabel::setCoordinate);
+	        coordinateLabel, &CoordinateLabel::setCoordinateAndHeight);
+	connect(mergeTreeDock, &MergeTreeDock::hoveredHeightChanged,
+	        coordinateLabel, &CoordinateLabel::setHeight);
 	connect(map, &RiverWidget::mouseLeft,
 	        coordinateLabel, &CoordinateLabel::clear);
 }
 
 void RiverGui::createActions() {
 
-	openAction = new QAction("&Open DEM...", this);
+	openAction = new QAction("&Open single DEM...", this);
 	openAction->setShortcuts(QKeySequence::Open);
 	openAction->setIcon(UiHelper::createIcon("document-open"));
-	openAction->setToolTip("Open a river image");
+	openAction->setToolTip("Open a file containing elevation data");
 	connect(openAction, &QAction::triggered, this, &RiverGui::openFrame);
 
 	openTimeSeriesAction = new QAction("&Open time series...", this);
 	openTimeSeriesAction->setIcon(UiHelper::createIcon("document-open"));
-	openTimeSeriesAction->setToolTip("Open a series of river images");
+	openTimeSeriesAction->setToolTip("Open a series of elevation data files");
 	connect(openTimeSeriesAction, &QAction::triggered, this, &RiverGui::openFrames);
+
+	saveFrameAction = new QAction("&Save DEM...", this);
+	saveFrameAction->setShortcuts(QKeySequence::Save);
+	saveFrameAction->setIcon(UiHelper::createIcon("document-save"));
+	saveFrameAction->setToolTip("Save an elevation data file");
+	connect(saveFrameAction, &QAction::triggered, this, &RiverGui::saveFrame);
 
 	openBoundaryAction = new QAction("&Open boundary...", this);
 	openBoundaryAction->setIcon(UiHelper::createIcon("document-open"));
-	openBoundaryAction->setToolTip("Open a river boundary");
+	openBoundaryAction->setToolTip("Open a boundary of the region to analyze");
 	connect(openBoundaryAction, &QAction::triggered, this, &RiverGui::openBoundary);
 
-	saveGraphAction = new QAction("Save graph...", this);
-	saveGraphAction->setIcon(UiHelper::createIcon("document-save"));
+	saveGraphAction = new QAction("Export graph...", this);
+	saveGraphAction->setIcon(UiHelper::createIcon("document-export"));
 	saveGraphAction->setToolTip("Save the computed network as a text document");
 	connect(saveGraphAction, &QAction::triggered, this, &RiverGui::saveGraph);
 
-	saveLinkSequenceAction = new QAction("&Save link sequence...", this);
-	saveLinkSequenceAction->setIcon(UiHelper::createIcon("document-save"));
+	saveLinkSequenceAction = new QAction("&Export link sequence...", this);
+	saveLinkSequenceAction->setIcon(UiHelper::createIcon("document-export"));
 	saveLinkSequenceAction->setToolTip("Save the link sequence of the computed network as a text document");
 	connect(saveLinkSequenceAction, &QAction::triggered, this, &RiverGui::saveLinkSequence);
 
 	saveBoundaryAction = new QAction("&Save boundary...", this);
 	saveBoundaryAction->setIcon(UiHelper::createIcon("document-save"));
-	saveBoundaryAction->setToolTip("Save a river boundary");
+	saveBoundaryAction->setToolTip("Save the drawn boundary to a file");
 	connect(saveBoundaryAction, &QAction::triggered, this, &RiverGui::saveBoundary);
+
+	saveImageAction = new QAction("&Export image...", this);
+	saveImageAction->setIcon(UiHelper::createIcon("document-export"));
+	saveImageAction->setToolTip("Save the currently visible area of the DEM as an image");
+	connect(saveImageAction, &QAction::triggered, this, &RiverGui::saveImage);
+
+	closeAction = new QAction("&Close", this);
+	closeAction->setIcon(UiHelper::createIcon("document-close"));
+	closeAction->setToolTip("Close the currently opened DEM");
+	connect(closeAction, &QAction::triggered, this, &RiverGui::closeFrame);
 
 	quitAction = new QAction("&Quit", this);
 	quitAction->setShortcuts(QKeySequence::Quit);
 	quitAction->setIcon(UiHelper::createIcon("application-exit"));
 	quitAction->setToolTip("Quit the application");
 	connect(quitAction, &QAction::triggered, qApp, &QApplication::quit);
+
+	generateBoundaryAction = new QAction("&Auto-generate boundary", this);
+	generateBoundaryAction->setIcon(UiHelper::createIcon("autocorrection"));
+	generateBoundaryAction->setToolTip("Draw the boundary around one connected area of surrounded by nodata");
+	connect(generateBoundaryAction, &QAction::triggered, [&] {
+		map->startBoundaryGenerateMode();
+		updateActions();
+	});
+
+	setSourceSinkAction = new QAction("&Set source and sink", this);
+	setSourceSinkAction->setToolTip("Sets the parts of the boundary that serve as the source and sink");
+	connect(setSourceSinkAction, &QAction::triggered, [&] {
+		map->startSetSourceSinkMode();
+		updateActions();
+	});
+
+	resetBoundaryAction = new QAction("&Reset boundary", this);
+	resetBoundaryAction->setIcon(UiHelper::createIcon("edit-reset"));
+	resetBoundaryAction->setToolTip("Reset the boundary to one that surrounds the entire DEM");
+	connect(resetBoundaryAction, &QAction::triggered, this, &RiverGui::resetBoundary);
 
 	showBackgroundAction = new QAction("&Background", this);
 	showBackgroundAction->setIcon(UiHelper::createIcon("compass"));
@@ -163,12 +229,44 @@ void RiverGui::createActions() {
 	connect(showBackgroundAction, &QAction::triggered, map, &RiverWidget::setDrawBackground);
 	connect(showBackgroundAction, &QAction::triggered, this, &RiverGui::updateActions);
 
-	showInputDcelAction = new QAction("Show &input graph", this);
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+	showSimplifiedAction = new QAction("&Simplified", this);
+	showSimplifiedAction->setIcon(UiHelper::createIcon("compass"));
+	showSimplifiedAction->setToolTip("Show the gradient pairs and critical points in their simplified form");
+	showSimplifiedAction->setCheckable(true);
+	connect(showSimplifiedAction, &QAction::triggered, map, &RiverWidget::setShowSimplified);
+	connect(showSimplifiedAction, &QAction::triggered, this, &RiverGui::updateActions);
+#endif
+
+	showInputDcelAction = new QAction("Show &gradient pairs", this);
 	showInputDcelAction->setIcon(UiHelper::createIcon("color-gradient"));
-	showInputDcelAction->setToolTip("Show or hide the input graph");
+	showInputDcelAction->setToolTip("Show or hide the gradient pairs");
 	showInputDcelAction->setCheckable(true);
 	showInputDcelAction->setChecked(false);
 	connect(showInputDcelAction, &QAction::toggled, map, &RiverWidget::setShowInputDcel);
+
+	drawGradientPairsAsTreesAction = new QAction("As trees", this);
+	drawGradientPairsAsTreesAction->setIcon(UiHelper::createIcon("color-gradient"));
+	drawGradientPairsAsTreesAction->setToolTip("Draws the gradient pairs as trees instead of arrows");
+	drawGradientPairsAsTreesAction->setCheckable(true);
+	drawGradientPairsAsTreesAction->setChecked(false);
+	connect(drawGradientPairsAsTreesAction, &QAction::toggled, map, &RiverWidget::setDrawGradientPairsAsTrees);
+
+	showCriticalPointsAction = new QAction("Show &critical points", this);
+	showCriticalPointsAction->setIcon(UiHelper::createIcon("color-gradient"));
+	showCriticalPointsAction->setToolTip("Show or hide the critical points");
+	showCriticalPointsAction->setCheckable(true);
+	showCriticalPointsAction->setChecked(false);
+	connect(showCriticalPointsAction, &QAction::toggled, map, &RiverWidget::setShowCriticalPoints);
+
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+	showSpursAction = new QAction("Show spurs", this);
+	showSpursAction->setIcon(UiHelper::createIcon("color-gradient"));
+	showSpursAction->setToolTip("Show or hide the spurs used in the finger computation");
+	showSpursAction->setCheckable(true);
+	showSpursAction->setChecked(false);
+	connect(showSpursAction, &QAction::toggled, map, &RiverWidget::setShowSpurs);
+#endif
 
 	showMsComplexAction = new QAction("Show &MS complex", this);
 	showMsComplexAction->setIcon(UiHelper::createIcon("color-gradient"));
@@ -177,6 +275,13 @@ void RiverGui::createActions() {
 	showMsComplexAction->setChecked(false);
 	connect(showMsComplexAction, &QAction::toggled, map, &RiverWidget::setShowMsComplex);
 
+	showNetworkAction = new QAction("Show &network", this);
+	showNetworkAction->setIcon(UiHelper::createIcon("color-gradient"));
+	showNetworkAction->setToolTip("Show or hide the generated network");
+	showNetworkAction->setCheckable(true);
+	showNetworkAction->setChecked(true);
+	connect(showNetworkAction, &QAction::toggled, map, &RiverWidget::setShowNetwork);
+
 	msEdgesStraightAction = new QAction("&Straight MS edges", this);
 	msEdgesStraightAction->setIcon(UiHelper::createIcon("color-gradient"));
 	msEdgesStraightAction->setToolTip("Draw MS edges as straight lines");
@@ -184,18 +289,31 @@ void RiverGui::createActions() {
 	msEdgesStraightAction->setChecked(false);
 	connect(msEdgesStraightAction, &QAction::toggled, map, &RiverWidget::setMsEdgesStraight);
 
+	showNetworkAction = new QAction("Show &network", this);
+	showNetworkAction->setIcon(UiHelper::createIcon("color-gradient"));
+	showNetworkAction->setToolTip("Show or hide the generated network");
+	showNetworkAction->setCheckable(true);
+	showNetworkAction->setChecked(true);
+	connect(showNetworkAction, &QAction::toggled, map, &RiverWidget::setShowNetwork);
+
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+	showFingersAction = new QAction("Show &fingers", this);
+	showFingersAction->setIcon(UiHelper::createIcon("color-gradient"));
+	showFingersAction->setToolTip("Show or hide the generated fingers");
+	showFingersAction->setCheckable(true);
+	showFingersAction->setChecked(true);
+	connect(showFingersAction, &QAction::toggled, map, &RiverWidget::setShowFingers);
+#endif
+
 	editBoundaryAction = new QAction("&Edit boundary", this);
 	editBoundaryAction->setIcon(UiHelper::createIcon("draw-freehand"));
 	editBoundaryAction->setCheckable(true);
 	editBoundaryAction->setToolTip("Delineate the part of the river to be analyzed, by drawing a boundary");
 	connect(editBoundaryAction, &QAction::toggled, [&] {
 		if (editBoundaryAction->isChecked()) {
-			Boundary boundary{m_riverData->boundary()};
-			map->startBoundaryEditMode(boundary);
+			map->startBoundaryEditMode();
 		} else {
-			Boundary boundary = map->endBoundaryEditMode();
-			m_riverData->setBoundary(boundary);
-			markComputationNeeded(true);
+			map->endBoundaryEditMode();
 		}
 		updateActions();
 	});
@@ -204,8 +322,21 @@ void RiverGui::createActions() {
 	computeAction->setShortcut(QKeySequence("Ctrl+C"));
 	computeAction->setIcon(UiHelper::createIcon("run-build"));
 	computeAction->setToolTip("Start the computation");
-	connect(computeAction, &QAction::triggered,
-	        this, &RiverGui::startComputation);
+	connect(computeAction, &QAction::triggered, this, [this]() { startComputation(false); });
+
+	computeAllFramesAction = new QAction("&Compute for all frames", this);
+	computeAllFramesAction->setIcon(UiHelper::createIcon("run-build-configure"));
+	computeAllFramesAction->setToolTip("Start the computation for all frames");
+	connect(computeAllFramesAction, &QAction::triggered, this, [this]() { startComputation(true); });
+
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+	computeFingersAction = new QAction("&Compute fingers", this);
+	computeFingersAction->setShortcut(QKeySequence("Ctrl+G"));
+	computeFingersAction->setIcon(UiHelper::createIcon("run-build"));
+	computeFingersAction->setToolTip("Computes and draws fingers");
+	connect(computeFingersAction, &QAction::triggered,
+	        this, &RiverGui::computeFingers);
+#endif
 
 	zoomInAction = new QAction("Zoom &in", this);
 	zoomInAction->setShortcuts(QKeySequence::ZoomIn);
@@ -245,19 +376,49 @@ void RiverGui::updateActions() {
 
 	showInputDcelAction->setEnabled(m_riverData != nullptr && activeFrame()->m_inputDcel != nullptr &&
 	                                !map->boundaryEditMode());
+	drawGradientPairsAsTreesAction->setEnabled(m_riverData != nullptr && activeFrame()->m_inputDcel != nullptr &&
+	                                !map->boundaryEditMode());
+	showCriticalPointsAction->setEnabled(
+	    m_riverData != nullptr && activeFrame()->m_inputDcel != nullptr && !map->boundaryEditMode());
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+	showSpursAction->setEnabled(m_riverData != nullptr && activeFrame()->m_inputDcel != nullptr &&
+	                               !map->boundaryEditMode() && showSimplifiedAction->isChecked());
+#endif
 	showMsComplexAction->setEnabled(m_riverData != nullptr && activeFrame()->m_msComplex != nullptr &&
 	                                !map->boundaryEditMode());
+	showNetworkAction->setEnabled(m_riverData != nullptr && activeFrame()->m_networkGraph != nullptr &&
+	                              !map->boundaryEditMode());
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+	showFingersAction->setEnabled(m_riverData != nullptr && activeFrame()->m_fingers != nullptr);
+#endif
 
+	openAction->setEnabled(!map->boundaryEditMode());
+	openTimeSeriesAction->setEnabled(!map->boundaryEditMode());
 	openBoundaryAction->setEnabled(m_riverData != nullptr && !map->boundaryEditMode());
 	saveBoundaryAction->setEnabled(m_riverData != nullptr && !map->boundaryEditMode());
-	editBoundaryAction->setEnabled(m_riverData != nullptr);
+	saveImageAction->setEnabled(m_riverData != nullptr && !map->boundaryEditMode());
+	saveFrameAction->setEnabled(m_riverData != nullptr && !map->boundaryEditMode());
+	generateBoundaryAction->setEnabled(m_riverData != nullptr && !map->boundaryEditMode());
+	setSourceSinkAction->setEnabled(m_riverData != nullptr && !map->boundaryEditMode());
+	editBoundaryAction->setEnabled(m_riverData != nullptr && (editBoundaryAction->isChecked() || !map->boundaryEditMode()));
+	resetBoundaryAction->setEnabled(m_riverData != nullptr && !map->boundaryEditMode());
 
 	saveGraphAction->setEnabled(m_riverData != nullptr && activeFrame()->m_networkGraph != nullptr);
 	saveLinkSequenceAction->setEnabled(m_riverData != nullptr && activeFrame()->m_networkGraph != nullptr);
 	showBackgroundAction->setEnabled(m_riverData != nullptr);
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+	showSimplifiedAction->setEnabled(m_riverData != nullptr && activeFrame()->m_simplifiedInputDcel != nullptr);
+#endif
 
-	computeAction->setEnabled(m_riverData != nullptr && m_computationNeeded &&
-	                          !m_computationRunning && !map->boundaryEditMode());
+	closeAction->setEnabled(m_riverData != nullptr && !map->boundaryEditMode());
+
+	computeAction->setEnabled(m_riverData != nullptr && !m_computationRunning &&
+	                          !map->boundaryEditMode());
+	computeAllFramesAction->setEnabled(m_riverData != nullptr && !m_computationRunning &&
+	                                   m_riverData->frameCount() > 1 && !map->boundaryEditMode());
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+	computeFingersAction->setEnabled(m_riverData != nullptr && activeFrame()->m_inputDcel != nullptr);
+#endif
 
 	zoomInAction->setEnabled(m_riverData != nullptr);
 	zoomOutAction->setEnabled(m_riverData != nullptr);
@@ -275,34 +436,66 @@ void RiverGui::updateActions() {
 	progressDock->setVisible(m_riverData != nullptr);
 
 	timeDock->setVisible(m_riverData != nullptr && m_riverData->frameCount() > 1);
+
+	boundaryMenu->setEnabled(m_riverData != nullptr);
+	exportMenu->setEnabled(m_riverData != nullptr);
+	runMenu->setEnabled(m_riverData != nullptr);
+	viewMenu->setEnabled(m_riverData != nullptr);
 }
 
 void RiverGui::createMenu() {
 	fileMenu = menuBar()->addMenu("&File");
-	fileMenu->addAction(openAction);
-	fileMenu->addAction(openTimeSeriesAction);
-	fileMenu->addAction(saveGraphAction);
-	fileMenu->addAction(saveLinkSequenceAction);
+	openMenu = fileMenu->addMenu("Open DEM");
+	openMenu->setIcon(UiHelper::createIcon("document-open"));
+	openMenu->addAction(openAction);
+	openMenu->addAction(openTimeSeriesAction);
+	fileMenu->addAction(saveFrameAction);
 	fileMenu->addSeparator();
-	fileMenu->addAction(openBoundaryAction);
-	fileMenu->addAction(saveBoundaryAction);
+	exportMenu = fileMenu->addMenu("Export");
+	exportMenu->setIcon(UiHelper::createIcon("document-export"));
+	exportMenu->addAction(saveImageAction);
+	exportMenu->addAction(saveGraphAction);
+	exportMenu->addAction(saveLinkSequenceAction);
 	fileMenu->addSeparator();
+	fileMenu->addAction(closeAction);
 	fileMenu->addAction(quitAction);
 
-	editMenu = menuBar()->addMenu("&Edit");
-	editMenu->addAction(editBoundaryAction);
+	boundaryMenu = menuBar()->addMenu("&Boundary");
+	boundaryMenu->addAction(generateBoundaryAction);
+	boundaryMenu->addAction(setSourceSinkAction);
+	boundaryMenu->addAction(editBoundaryAction);
+	boundaryMenu->addAction(resetBoundaryAction);
+	boundaryMenu->addSeparator();
+	boundaryMenu->addAction(openBoundaryAction);
+	boundaryMenu->addAction(saveBoundaryAction);
 
 	runMenu = menuBar()->addMenu("&Run");
 	runMenu->addAction(computeAction);
+	runMenu->addAction(computeAllFramesAction);
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+	runMenu->addAction(computeFingersAction);
+#endif
 
 	viewMenu = menuBar()->addMenu("&View");
 	viewMenu->addAction(showBackgroundAction);
+	viewMenu->addSeparator();
 	viewMenu->addAction(zoomInAction);
 	viewMenu->addAction(zoomOutAction);
 	viewMenu->addAction(fitToViewAction);
 	viewMenu->addSeparator();
 	viewMenu->addAction(showInputDcelAction);
+	viewMenu->addAction(drawGradientPairsAsTreesAction);
+	viewMenu->addAction(showCriticalPointsAction);
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+	viewMenu->addAction(showSimplifiedAction);
+	viewMenu->addAction(showSpursAction);
+#endif
 	viewMenu->addAction(showMsComplexAction);
+	viewMenu->addAction(showNetworkAction);
+	viewMenu->addAction(showNetworkAction);
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+	viewMenu->addAction(showFingersAction);
+#endif
 
 	helpMenu = menuBar()->addMenu("&Help");
 	helpMenu->addAction(aboutAction);
@@ -312,10 +505,28 @@ void RiverGui::createMenu() {
 void RiverGui::createToolBar() {
 	toolBar = addToolBar("Main toolbar");
 
-	toolBar->addAction(computeAction);
+	QToolButton* computeButton = new QToolButton(toolBar);
+	computeButton->setText("Compute network");
+	computeButton->setIcon(UiHelper::createIcon("run-build"));
+	computeButton->setToolButtonStyle(Qt::ToolButtonStyle::ToolButtonTextBesideIcon);
+	computeButton->setPopupMode(QToolButton::ToolButtonPopupMode::DelayedPopup);
+	computeButton->addAction(computeAction);
+	computeButton->addAction(computeAllFramesAction);
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+	computeButton->addAction(computeFingersAction);
+#endif
+	computeButton->setDefaultAction(computeAction);
+	toolBar->addWidget(computeButton);
 	toolBar->addSeparator();
-	toolBar->addAction(showBackgroundAction);
 	toolBar->addAction(editBoundaryAction);
+	toolBar->addSeparator();
+	toolBar->addAction(showInputDcelAction);
+	toolBar->addAction(showCriticalPointsAction);
+	toolBar->addAction(showMsComplexAction);
+	toolBar->addAction(showNetworkAction);
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+	toolBar->addAction(showFingersAction);
+#endif
 	toolBar->addSeparator();
 	toolBar->addAction(zoomInAction);
 	toolBar->addAction(zoomOutAction);
@@ -340,13 +551,27 @@ void RiverGui::dropEvent(QDropEvent *event) {
 	for (QUrl& url : urls) {
 		fileNames << url.toLocalFile();
 	}
+
+	// try if the dropped file is a boundary file
+	if (m_riverData != nullptr && fileNames.size() == 1) {
+		QString error = "";
+		Boundary boundary = BoundaryReader::readBoundary(fileNames[0], m_riverData->width(),
+		                                                 m_riverData->height(), error);
+		if (error == "") {
+			m_riverData->setBoundary(boundary);
+			map->update();
+			return;
+		}
+	}
+
+	// otherwise, try opening it as a DEM
 	openFramesNamed(fileNames);
 }
 
 void RiverGui::openFrame() {
 	QString fileName = QFileDialog::getOpenFileName(
 	            this,
-	            "Open river heightmap",
+	            "Open DEM",
 	            ".");
 	if (fileName == nullptr) {
 		return;
@@ -359,7 +584,7 @@ void RiverGui::openFrame() {
 void RiverGui::openFrames() {
 	QStringList fileNames = QFileDialog::getOpenFileNames(
 	            this,
-	            "Open river time series",
+	            "Open time series",
 	            ".");
 	if (fileNames.empty()) {
 		return;
@@ -372,8 +597,8 @@ void RiverGui::openFramesNamed(QStringList& fileNames) {
 	if (m_computationRunning) {
 		QMessageBox msgBox;
 		msgBox.setIcon(QMessageBox::Critical);
-		msgBox.setWindowTitle("Cannot open river");
-		msgBox.setText("<qt>The river cannot be opened.");
+		msgBox.setWindowTitle("Cannot open elevation data");
+		msgBox.setText("<qt>The file cannot be opened.");
 		msgBox.setInformativeText("<qt>There is still a running computation. "
 		                          "Wait until the computation is finished, and "
 		                          "try again.");
@@ -415,18 +640,20 @@ void RiverGui::openFramesNamed(QStringList& fileNames) {
 	map->setRiverFrame(activeFrame());
 	map->resetTransform();
 	backgroundDock->setElevationRange(m_riverData->minimumElevation(), m_riverData->maximumElevation());
+	mergeTreeDock->setMergeTree(nullptr);
+	mergeTreeDock->setElevationRange(m_riverData->minimumElevation(), m_riverData->maximumElevation());
+	mergeTreeDock->setMapSize(m_riverData->width(), m_riverData->height());
 	unitsDock->setUnits(m_riverData->units());
 	progressDock->reset();
 	timeDock->setFrame(0);
 	timeDock->setFrameCount(m_riverData->frameCount());
 	updateActions();
-	markComputationNeeded(false);
 
 	if (fileNames.length() == 1) {
-		statusBar()->showMessage("Opened river \"" + fileNames[0] + "\"", 5000);
+		statusBar()->showMessage("Opened elevation data \"" + fileNames[0] + "\"", 5000);
 	} else {
 		statusBar()->showMessage(
-		    QString("Opened river containing %1 frames").arg(fileNames.length()), 5000);
+		    QString("Opened time series consisting of %1 frames").arg(fileNames.length()), 5000);
 	}
 }
   
@@ -445,13 +672,14 @@ std::shared_ptr<RiverFrame> RiverGui::loadFrame(const QString& fileName, Units& 
 		// something went wrong
 		QMessageBox msgBox;
 		msgBox.setIcon(QMessageBox::Critical);
-		msgBox.setWindowTitle("Cannot open river");
-		msgBox.setText(QString("<qt>The river <code>%1</code> cannot be opened.").arg(fileName));
-		msgBox.setInformativeText("<qt><p>This file does not seem to be an image file "
-								"or a valid text file containing elevation "
-								"data.</p>");
+		msgBox.setWindowTitle("Cannot open elevation data");
+		msgBox.setText(QString("<qt>The file <code>%1</code> cannot be opened.").arg(fileName));
+		msgBox.setInformativeText("<qt><p>This file does not seem to be a type of DEM "
+		                          "that TopoTide supports. TopoTide supports, among others, "
+		                          "GeoTIFF and ESRI grid files.</p>");
 		msgBox.setDetailedText("Reading the file failed due to the "
-							"following error:\n    " + error);
+		                       "following error:\n    " +
+		                       error);
 		msgBox.exec();
 		return nullptr;
 	}
@@ -459,10 +687,40 @@ std::shared_ptr<RiverFrame> RiverGui::loadFrame(const QString& fileName, Units& 
 	return std::make_shared<RiverFrame>(fileName, heightMap);
 }
 
+void RiverGui::saveFrame() {
+
+	QString fileName = QFileDialog::getSaveFileName(this,
+	        "Save DEM",
+	        ".",
+	        "ESRI grid files (*.ascii)");
+	if (fileName == nullptr) {
+		return;
+	}
+
+	EsriGridWriter::writeGridFile(activeFrame()->m_heightMap, fileName, m_riverData->units());
+}
+
+void RiverGui::resetBoundary() {
+	if (m_computationRunning) {
+		QMessageBox msgBox;
+		msgBox.setIcon(QMessageBox::Critical);
+		msgBox.setWindowTitle("Cannot reset boundary");
+		msgBox.setText("<qt>The boundary cannot be reset.");
+		msgBox.setInformativeText("<qt>There is still a running computation. "
+		                          "Wait until the computation is finished, and "
+		                          "try again.");
+		msgBox.exec();
+		return;
+	}
+
+	m_riverData->setBoundary(Boundary{m_riverData->width(), m_riverData->height()});
+	map->update();
+}
+
 void RiverGui::openBoundary() {
 	QString fileName = QFileDialog::getOpenFileName(
 	            this,
-	            "Open river boundary",
+	            "Open boundary",
 	            ".",
 	            "Boundary text files (*.txt)");
 	if (fileName == nullptr) {
@@ -473,7 +731,7 @@ void RiverGui::openBoundary() {
 		QMessageBox msgBox;
 		msgBox.setIcon(QMessageBox::Critical);
 		msgBox.setWindowTitle("Cannot open boundary");
-		msgBox.setText("<qt>The river boundary cannot be opened.");
+		msgBox.setText("<qt>The boundary cannot be opened.");
 		msgBox.setInformativeText("<qt>There is still a running computation. "
 		                          "Wait until the computation is finished, and "
 		                          "try again.");
@@ -490,19 +748,18 @@ void RiverGui::openBoundary() {
 		QMessageBox msgBox;
 		msgBox.setIcon(QMessageBox::Critical);
 		msgBox.setWindowTitle("Cannot open boundary");
-		msgBox.setText(QString("<qt>The river boundary <code>%1</code> cannot be opened.").arg(fileName));
+		msgBox.setText(QString("<qt>The boundary <code>%1</code> cannot be opened.").arg(fileName));
 		msgBox.setInformativeText("<qt><p>This file does not seem to be "
-		                          "a valid text file containing a river "
-		                          "boundary.</p>");
+		                          "a valid text file containing a boundary.</p>");
 		msgBox.setDetailedText("Reading the text file failed due to the "
-		                       "following error:\n    " + error);
+		                       "following error:\n    " +
+		                       error);
 		msgBox.exec();
 		return;
 	}
 
 	m_riverData->setBoundary(boundary);
 	map->update();
-	markComputationNeeded(false);
 }
 
 void RiverGui::saveGraph() {
@@ -583,6 +840,22 @@ void RiverGui::saveBoundary() {
 	                         fileName + "\"", 5000);
 }
 
+void RiverGui::saveImage() {
+
+	QString fileName = QFileDialog::getSaveFileName(this,
+	        "Save DEM as image",
+	        ".",
+	        "Images (*.png)");
+	if (fileName == nullptr) {
+		return;
+	}
+
+	QImage background = map->grabFramebuffer();
+	background.save(fileName);
+
+	statusBar()->showMessage("Saved image \"" + fileName + "\"", 5000);
+}
+
 void RiverGui::about() {
 	QMessageBox msgBox;
 	msgBox.setWindowTitle("About TopoTide");
@@ -615,50 +888,20 @@ void RiverGui::about() {
 	msgBox.exec();
 }
 
-void RiverGui::markComputationNeeded(bool onlyNetwork) {
-	if (!m_computationNeeded) {
-		m_onlyNetworkNeeded = onlyNetwork;
-	} else {
-		m_onlyNetworkNeeded = m_onlyNetworkNeeded && onlyNetwork;
-	}
-	m_computationNeeded = true;
-	updateActions();
-}
-
-void RiverGui::startComputation() {
-	if (!m_computationNeeded) {
-		qDebug() << "Tried to start computation while none was needed";
-		return;
-	}
+void RiverGui::startComputation(bool allFrames) {
 	if (m_computationRunning) {
 		qDebug() << "Tried to start computation while another was still running";
 		return;
 	}
 	
-	if (!m_riverData->boundaryRasterized().isValid()) {
-		QMessageBox msgBox;
-		msgBox.setIcon(QMessageBox::Critical);
-		msgBox.setWindowTitle("Boundary invalid");
-		msgBox.setText("<qt>The computation cannot run as the boundary is invalid.");
-		msgBox.setInformativeText("<qt>A valid boundary does not self-intersect and does not visit "
-		                          "any points more than once. "
-		                          "Edit the boundary and try again.");
-		msgBox.exec();
-		return;
-	}
 	progressDock->reset();
 	m_computationRunning = true;
-	m_computationNeeded = false;
 
-	activeFrame()->m_inputGraph = nullptr;
-	activeFrame()->m_inputDcel = nullptr;
-	activeFrame()->m_msComplex = nullptr;
-	activeFrame()->m_networkGraph = nullptr;
 	map->update();
 	updateActions();
 
-	auto* thread = new BackgroundThread(m_riverData, activeFrame(),
-	                                    pow(10, settingsDock->msThreshold() / 10.0));
+	auto* thread = allFrames ? new BackgroundThread(m_riverData)
+	                         : new BackgroundThread(m_riverData, activeFrame());
 
 	connect(thread, &BackgroundThread::taskStarted, this, [this](QString task) {
 		QThread::currentThread();
@@ -676,13 +919,21 @@ void RiverGui::startComputation() {
 		progressDock->endTask(task);
 		statusBar()->clearMessage();
 		map->update();
+		mergeTreeDock->setMergeTree(activeFrame()->m_mergeTree);
 		updateActions();
+	});
+	
+	connect(thread, &BackgroundThread::errorEncountered, this, [this](QString error) {
+		QMessageBox msgBox;
+		msgBox.setIcon(QMessageBox::Critical);
+		msgBox.setWindowTitle("Error encountered during computation");
+		msgBox.setText("<qt>" + error);
+		msgBox.exec();
 	});
 
 	connect(thread, &QThread::finished, thread, &QThread::deleteLater);
 	connect(thread, &QThread::finished, this, [&] {
 		m_computationRunning = false;
-		statusBar()->showMessage("Computation finished");
 		map->update();
 		updateActions();
 		setCursor(Qt::ArrowCursor);
@@ -692,6 +943,46 @@ void RiverGui::startComputation() {
 	setCursor(Qt::BusyCursor);
 }
 
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+void RiverGui::computeFingers() {
+	const std::shared_ptr<RiverFrame>& frame = activeFrame();
+	QWriteLocker lock1(&(frame->m_inputDcelLock));
+	QWriteLocker lock2(&(frame->m_msComplexLock));
+	QWriteLocker lock3(&(frame->m_simplifiedInputDcelLock));
+	frame->m_simplifiedInputDcel = std::make_shared<InputDcel>(*frame->m_inputDcel);
+
+	GradientFieldSimplifier simplifier(frame->m_simplifiedInputDcel, frame->m_msComplex,
+	                                   settingsDock->msThreshold());
+	simplifier.simplify();
+
+	FingerFinder finder(frame->m_simplifiedInputDcel, frame->m_msComplex,
+	                    settingsDock->msThreshold());
+	frame->m_fingers = std::make_shared<std::vector<InputDcel::Path>>(finder.findFingers());
+	map->update();
+	updateActions();
+}
+#endif
+
 std::shared_ptr<RiverFrame> RiverGui::activeFrame() {
 	return m_riverData->getFrame(m_frame);
+}
+
+void RiverGui::closeFrame() {
+	if (m_computationRunning) {
+		QMessageBox msgBox;
+		msgBox.setIcon(QMessageBox::Critical);
+		msgBox.setWindowTitle("Cannot close DEM");
+		msgBox.setText("<qt>The DEM cannot be closed.");
+		msgBox.setInformativeText("<qt>There is still a running computation. "
+		                          "Wait until the computation is finished, and "
+		                          "try again.");
+		msgBox.exec();
+		return;
+	}
+
+	m_riverData = nullptr;
+	map->setRiverData(nullptr);
+	map->setRiverFrame(nullptr);
+	map->update();
+	updateActions();
 }

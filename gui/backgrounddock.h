@@ -11,7 +11,23 @@
 #include <QSpinBox>
 #include <QWidget>
 
-#include "units.h"
+#include "colorramp.h"
+
+class ColorRampViewer : public QWidget {
+	Q_OBJECT
+
+	public:
+		ColorRampViewer(ColorRamp ramp, QWidget* parent = nullptr);
+
+	public slots:
+		void setColorRamp(ColorRamp ramp);
+
+	protected:
+		void paintEvent(QPaintEvent *event) override;
+
+	private:
+		ColorRamp m_ramp;
+};
 
 /**
  * A QDockWidget that allows the user to change how the background map is
@@ -36,10 +52,10 @@ class BackgroundDock : public QDockWidget {
 		bool showElevation();
 
 		/**
-		 * Returns the currently set theme.
-		 * \return The theme.
+		 * Returns the currently set color ramp.
+		 * \return The color ramp.
 		 */
-		QString theme();
+		ColorRamp colorRamp();
 
 		/**
 		 * Returns whether the water plane should be shown.
@@ -81,7 +97,7 @@ class BackgroundDock : public QDockWidget {
 		void contourCountChanged(int contourCount);
 		void showShadingChanged(bool showShading);
 		void waterLevelChanged(double waterLevel);
-		void themeChanged(QString theme);
+		void colorRampChanged(ColorRamp colorRamp);
 
 	private:
 		QWidget* m_settingsWidget;
@@ -89,6 +105,7 @@ class BackgroundDock : public QDockWidget {
 		QCheckBox* m_showElevationBox;
 		QWidget* m_elevationSettings;
 		QComboBox* m_colorSchemeBox;
+		ColorRampViewer* m_colorRampViewer;
 
 		QCheckBox* m_showWaterLevelBox;
 		QWidget* m_waterLevelSettings;

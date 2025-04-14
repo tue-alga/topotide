@@ -5,7 +5,7 @@
 #include "heightmap.h"
 
 QString UnitsHelper::formatElevation(double meters) {
-	if (meters == HeightMap::nodata) {
+	if (std::isnan(meters)) {
 		return "(no data)";
 	}
 	int precision;

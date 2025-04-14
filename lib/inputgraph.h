@@ -4,9 +4,9 @@
 #include <vector>
 
 #include "boundary.h"
+#include "boundarystatus.h"
 #include "heightmap.h"
 #include "point.h"
-#include "units.h"
 
 /**
  * The initial graph that is created from the height map.
@@ -29,19 +29,7 @@ class InputGraph {
 			 * \param from The ID of the origin vertex.
 			 * \param to The ID of the destination vertex.
 			 */
-			Adjacency(int from, int to) :
-			    from(from), to(to), disambiguation(false) {
-			}
-
-			/**
-			 * Creates a new adjacency.
-			 *
-			 * \param from The ID of the origin vertex.
-			 * \param to The ID of the destination vertex.
-			 * \param disambiguation The disambiguation flag.
-			 */
-			Adjacency(int from, int to, bool disambiguation) :
-			    from(from), to(to), disambiguation(disambiguation) {
+			Adjacency(int from, int to) : from(from), to(to) {
 			}
 
 			/**
@@ -54,19 +42,12 @@ class InputGraph {
 			 */
 			int to;
 
-			/**
-			 * A flag used to disambiguate two adjacencies between the same
-			 * origin and destination.
-			 *
-			 * If there is only one source (sink) then it needs two connections
-			 * to the global maximum. When creating an InputDcel from this
-			 * InputGraph, we need a way to tell these two adjacencies apart.
-			 * Therefore, we set this flag to true for all adjacencies between
-			 * the bottom path and the global maximum. Then in the InputDcel
-			 * construction we regard two adjacencies as equal only if their
-			 * \c disambiguation flags are the same.
-			 */
-			bool disambiguation;
+			/// Whether this adjacency is on the boundary.
+			BoundaryStatus boundaryStatus = BoundaryStatus::INTERIOR;
+
+			/// When `boundaryStatus == BoundaryStatus::PERMEABLE`, this stores
+			/// the index of that permeable region.
+			std::optional<int> permeableRegion;
 		};
 
 		/**
@@ -80,7 +61,7 @@ class InputGraph {
 			 * \param id The ID. Should be equal to the position in the vertices
 			 * list of the graph.
 			 */
-			Vertex(int id);
+			explicit Vertex(int id);
 
 			/**
 			 * The adjacent vertices.
@@ -102,6 +83,17 @@ class InputGraph {
 			 */
 			Point p;
 
+			/// Whether this vertex is on the boundary.
+			BoundaryStatus boundaryStatus = BoundaryStatus::IMPERMEABLE;
+
+			/// When `boundaryStatus == BoundaryStatus::PERMEABLE`, this stores the
+			/// index of that permeable region.
+			std::optional<int> permeableRegion;
+
+			/// Finds the index of the adjacency to the given vertex, if it
+			/// exists.
+			std::optional<int> findAdjacencyTo(int to) const;
+
 			/**
 			 * Adds an adjacency to the back of the adjacency list of this
 			 * vertex.
@@ -115,16 +107,21 @@ class InputGraph {
 			 *
 			 * \param to The destination vertex.
 			 */
-			void addAdjacency(int to, bool disambiguation = false);
+			void addAdjacencyAfter(int to);
+
+			/**
+			 * Adds an adjacency to the front of the adjacency list of this
+			 * vertex.
+			 *
+			 * \param to The destination vertex.
+			 */
+			void addAdjacencyBefore(int to);
 		};
 
 		/**
 		 * Creates an empty graph.
-		 *
-		 * \param units The real-world units. Used for finding steepest-descent
-		 * paths.
 		 */
-		InputGraph(Units units = Units());
+		InputGraph();
 
 		/**
 		 * Creates a graph corresponding to the given heightmap.
@@ -133,10 +130,8 @@ class InputGraph {
 		 * behavior is undefined.
 		 *
 		 * \param heightMap The heightmap.
-		 * \param units The real-world units. Used for finding steepest-descent
-		 * paths.
 		 */
-		InputGraph(const HeightMap& heightMap, Units units = Units());
+		InputGraph(const HeightMap& heightMap);
 
 		/**
 		 * Creates a graph corresponding to the part of the given heightmap that
@@ -148,14 +143,10 @@ class InputGraph {
 		 * \param heightMap The heightmap.
 		 * \param boundary The boundary. Everything inside this boundary is
 		 * included in the graph.
-		 * \param units The real-world units. Used for finding steepest-descent
-		 * paths.
 		 */
-		InputGraph(const HeightMap& heightMap,
-		           Boundary boundary,
-		           Units units = Units());
+	    InputGraph(const HeightMap& heightMap, Boundary boundary);
 
-		/**
+	    /**
 		 * Returns the `i`th vertex in the graph.
 		 *
 		 * \param i The index.
@@ -184,6 +175,12 @@ class InputGraph {
 		int addVertex();
 
 		/**
+		 * Returns the number of edges in the graph.
+		 * \return The number of edges.
+		 */
+		int edgeCount() const;
+
+		/**
 		 * Removes all edges in the graph.
 		 */
 		void clearAllEdges();
@@ -198,99 +195,50 @@ class InputGraph {
 		bool isAscending(const Adjacency& a) const;
 
 		/**
-		 * The wedges of a vertex.
+		 * Checks if the terrain contains nodata values.
 		 */
-		struct Wedges {
-
-			/**
-			 * List of the steepest-ascent neighbors in each ascending wedge,
-			 * as indices in the adj array.
-			 */
-			std::vector<int> ascending;
-
-			/**
-			 * List of the steepest-descent neighbors in each descending wedge,
-			 * as indices in the adj array.
-			 */
-			std::vector<int> descending;
-		};
-
-		/**
-		 * Returns the steepest-descending edge from a vertex.
-		 *
-		 * \param i The ID of the vertex.
-		 * \return The index of the steepest-descending edge from `i` in its
-		 * adjacency list, or `-1` if this vertex does not have any descending
-		 * edges.
-		 */
-		int steepestDescentFrom(int i) const;
-
-		/**
-		 * Checks if `a2` is steeper-ascending than `a1`. Or, alternatively, if
-		 * `a1` is steeper-descending than `a2`.
-		 *
-		 * \param a1 The first adjacency.
-		 * \param a2 The second adjacency.
-		 * \return Whether `a2` is steeper than `a1`.
-		 */
-		bool compareSteepness(const Adjacency& a1, const Adjacency& a2) const;
-
-		/**
-		 * Returns the length of the given adjacency.
-		 *
-		 * \param a The adjacency.
-		 * \return Its length.
-		 */
-		double adjacencyLength(const Adjacency& a) const;
+		bool containsNodata() const;
 
 	private:
-
 		/**
-		 * Adds the neighbor to the given vertex, but only if it is in bounds;
-		 * otherwise adds a neighbor to the source or sink (if the x-coordinate
-		 * is out of bounds).
-		 *
-		 * \param heightMap The height map.
-		 * \param v The ID of the current vertex.
-		 * \param source The ID of the source.
-		 * \param sink The ID of the sink.
-		 * \param globalMaximum The ID of the globalMaximum.
-		 * \param nx The x-coordinate of the proposed neighbor.
-		 * \param ny The y-coordinate of the proposed neighbor.
-		 *
-		 * \note This is an auxiliary method for `Graph(HeightMap)`.
+		 * Adds a new vertex with the given point.
+		 * \return The ID of the new vertex.
 		 */
-		void addNeighbor(const HeightMap& heightMap, int v,
-				int source, int sink, int globalMaximum,
-				int nx, int ny);
+		int addVertex(Point p);
 
 		/**
-		 * Returns the (possible) 6 neighbors of the given point.
+		 * Returns the (possible) 4 neighbors of the given point.
 		 *
 		 * \param v The point.
-		 * \return A list of the 6 neighbors, in counter-clockwise order,
+		 * \return A list of the 4 neighbors, in counter-clockwise order,
 		 * starting from the edge going to the right.
 		 */
 		std::vector<HeightMap::Coordinate> neighborsOf(HeightMap::Coordinate v);
+
+		/// Marks a vertex with the given boundary status and permeable region.
+		void markVertex(HeightMap::Coordinate c, BoundaryStatus status,
+					std::optional<int> permeableRegion = std::nullopt);
+		/// Marks an edge (i.e., both adjacencies representing that edge) with
+		/// the given boundary status and permeable region.
+		void markEdge(HeightMap::Coordinate c1, HeightMap::Coordinate c2, BoundaryStatus status,
+					std::optional<int> permeableRegion = std::nullopt);
 
 		/**
 		 * List of the vertices.
 		 */
 		std::vector<Vertex> m_verts;
-
-		/**
-		 * The real-world units.
-		 */
-		Units m_units;
+	
+		/// Mapping from HeightMap coordinates to vertex IDs. m_vertexMap[x][y]
+		/// is the index of the InputGraph vertex representing this HeightMap
+		/// coordinate.
+		std::vector<std::vector<int>> m_vertexMap;
 };
 
 // comparison operators for Adjacency
 
 inline bool operator==(const InputGraph::Adjacency& lhs,
                        const InputGraph::Adjacency& rhs) {
-	return lhs.from == rhs.from &&
-	        lhs.to == rhs.to &&
-	        lhs.disambiguation == rhs.disambiguation;
+	return lhs.from == rhs.from && lhs.to == rhs.to;
 }
 
 inline bool operator!=(const InputGraph::Adjacency& lhs,

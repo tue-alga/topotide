@@ -1,10 +1,13 @@
 #ifndef INPUTDCEL_H
 #define INPUTDCEL_H
 
+#include <optional>
+
+#include "boundarystatus.h"
 #include "dcel.h"
 #include "inputgraph.h"
 #include "point.h"
-#include "piecewisecubicfunction.h"
+#include "piecewiselinearfunction.h"
 
 /**
  * A vertex in the input DCEL.
@@ -32,6 +35,19 @@ class InputDcelVertex {
 		 * this DCEL.
 		 */
 		int msVertex = -1;
+
+		/// Whether this vertex is on the boundary.
+		BoundaryStatus boundaryStatus = BoundaryStatus::IMPERMEABLE;
+
+		/// When `boundaryStatus == BoundaryStatus::PERMEABLE`, this stores the
+		/// index of that permeable region.
+		std::optional<int> permeableRegion;
+
+		/**
+		 * Prints the coordinate and type of this vertex data, for debugging
+		 * purposes (see \ref Dcel::output(std::ostream&)).
+		 */
+		void output(std::ostream& out);
 };
 
 /**
@@ -76,6 +92,20 @@ class InputDcelHalfEdge {
 		 * this DCEL.
 		 */
 		mutable int msVertex = -1;
+
+		/**
+		 * The volume of the part of the red tree that arises when we cut the
+		 * red tree at this half-edge. Set by the \ref FingerFinder.
+		 */
+		PiecewiseLinearFunction volumeAbove;
+
+		/// Whether this edge is on the boundary. This value is identical for
+		/// both twin half-edges.
+		BoundaryStatus boundaryStatus = BoundaryStatus::INTERIOR;
+
+		/// When `boundaryStatus == BoundaryStatus::PERMEABLE`, this stores the
+		/// index of that permeable region.
+		std::optional<int> permeableRegion;
 };
 
 /**
@@ -107,14 +137,29 @@ class InputDcelFace {
 		 * changed.
 		 */
 		mutable int msFace = -1;
+
+		/**
+		 * The ID of the half edge that forms the top edge of this face. Only
+		 * defined for leaves in the red tree. Set by the \ref FingerFinder.
+		 */
+		int topEdge = -1;
+
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+		/// Holds face IDs
+		std::vector<int> pathToTopEdge;
+		std::vector<int> spurFaces;
+		/// Holds vertex IDs
+		std::vector<int> spurBoundary;
+
+		double flankingHeight;
+		bool isSignificant = false;
+#endif
 };
 
 /**
  * A DCEL that we generated from the InputGraph.
  */
-class InputDcel : public Dcel<InputDcelVertex,
-                              InputDcelHalfEdge,
-                              InputDcelFace> {
+class InputDcel : public Dcel<InputDcelVertex, InputDcelHalfEdge, InputDcelFace> {
 
 	public:
 
@@ -136,6 +181,16 @@ class InputDcel : public Dcel<InputDcelVertex,
 		InputDcel(const InputGraph& g);
 
 		/**
+		 * Sets the center coordinates for all edges and faces.
+		 */
+		void setEdgeAndFaceCoordinates();
+
+		/**
+		 * Computes vertex-edge and edge-face gradient pairs.
+		 */
+		void computeGradientFlow();
+
+		/**
 		 * Checks if this vertex is critical (i.e., if it is a minimum).
 		 */
 		bool isCritical(Vertex vertex) const;
@@ -144,6 +199,11 @@ class InputDcel : public Dcel<InputDcelVertex,
 		 * Checks if this half-edge is critical (i.e., if it is a saddle).
 		 */
 		bool isCritical(HalfEdge edge) const;
+
+		/**
+		 * Checks if this face is critical (i.e., if it is a maximum).
+		 */
+		bool isCritical(Face face) const;
 
 		/**
 		 * Computes the gradient-descent path starting from the given saddle.
@@ -180,27 +240,10 @@ class InputDcel : public Dcel<InputDcelVertex,
 		 * Returns a piecewise cubic function representing the volume of sand
 		 * above height *h* in the given face.
 		 *
-		 * \note This only works if `face` is triangular (which all faces in an
-		 * InputDcel should be, anyway). It does not work on faces containing
-		 * the source, the sink or the global maximum.
-		 *
 		 * \param face The face to return the sand function of.
 		 * \return The resulting sand function.
 		 */
-		PiecewiseCubicFunction volumeAboveFunction(Face face);
-
-		/**
-		 * Returns a piecewise cubic function representing the volume of air
-		 * below height *h* in the given face.
-		 *
-		 * \note This only works if `face` is triangular (which all faces in an
-		 * InputDcel should be, anyway). It does not work on faces containing
-		 * the source, the sink or the global maximum.
-		 *
-		 * \param face The face to return the air function of.
-		 * \return The resulting air function.
-		 */
-		PiecewiseCubicFunction volumeBelowFunction(Face face);
+		PiecewiseLinearFunction volumeAbove(Face face);
 
 		/**
 		 * Returns the vertex at the given position.
@@ -211,6 +254,21 @@ class InputDcel : public Dcel<InputDcelVertex,
 		 * the coordinate is out of bounds.
 		 */
 		Vertex vertexAt(double x, double y);
+
+		void pair(Vertex v, HalfEdge e);
+		void pair(HalfEdge e, Face f);
+
+		void unpair(Vertex v, HalfEdge e);
+		void unpair(HalfEdge e, Face f);
+
+		bool isBlueLeaf(Vertex v) const;
+		bool isRedLeaf(Face f) const;
+
+		/// Returns the outer face.
+		Face outerFace();
+
+	private:
+		int m_outerFaceId;
 };
 
 #endif // INPUTDCEL_H

@@ -19,11 +19,11 @@ class BoundaryWriter {
 		 * \param boundary The boundary to output.
 		 * \param fileName The file name of the image file.
 		 */
-		static void writeBoundary(Boundary& boundary,
-		                          const QString& fileName);
+		static void writeBoundary(Boundary& boundary, const QString& fileName);
 
 	private:
-		static void writePath(QTextStream& out, Path& path);
+		static int regionLength(const Path& path, int start, int end);
+		static void writeRegion(QTextStream& out, const Path& path, int start, int end);
 };
 
 #endif // BOUNDARYWRITER_H

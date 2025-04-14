@@ -10,6 +10,7 @@
 #include "heightmap.h"
 #include "inputdcel.h"
 #include "inputgraph.h"
+#include "mergetree.h"
 #include "mscomplex.h"
 #include "networkgraph.h"
 #include "units.h"
@@ -74,6 +75,9 @@ class RiverFrame : public QObject {
 		 */
 		QReadWriteLock m_inputDcelLock;
 
+		std::shared_ptr<MergeTree> m_mergeTree = nullptr;
+		QReadWriteLock m_mergeTreeLock;
+
 		/**
 		 * The Morse-Smale complex.
 		 *
@@ -98,6 +102,24 @@ class RiverFrame : public QObject {
 		 * Read-write lock for networkGraph.
 		 */
 		QReadWriteLock m_networkGraphLock;
+
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+		/**
+		 * The simplified input DCEL (with gradient pairs swapped).
+		 *
+		 * \note Acquire m_simplifiedInputDcelLock before reading / writing to
+		 * this field.
+		 */
+		std::shared_ptr<InputDcel> m_simplifiedInputDcel = nullptr;
+
+		/**
+		 * Read-write lock for m_simplifiedInputDcel.
+		 */
+		QReadWriteLock m_simplifiedInputDcelLock;
+
+		std::shared_ptr<std::vector<InputDcel::Path>> m_fingers = nullptr;
+		QReadWriteLock m_fingersLock;
+#endif
 };
 
 /**

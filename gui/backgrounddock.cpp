@@ -2,10 +2,26 @@
 #include <cmath>
 
 #include <QGridLayout>
+#include <QPainter>
 
 #include "backgrounddock.h"
 
 #include "unitshelper.h"
+
+ColorRampViewer::ColorRampViewer(ColorRamp ramp, QWidget* parent) : QWidget(parent), m_ramp(ramp) {
+	setMinimumSize(64, 8);
+}
+
+void ColorRampViewer::setColorRamp(ColorRamp ramp) {
+	m_ramp = ramp;
+	update();
+}
+
+void ColorRampViewer::paintEvent(QPaintEvent* event) {
+	QPainter p(this);
+	QImage image = m_ramp.toImage();
+	p.drawImage(rect(), image);
+}
 
 BackgroundDock::BackgroundDock(QWidget* parent) :
         QDockWidget("Background settings", parent) {
@@ -40,20 +56,23 @@ BackgroundDock::BackgroundDock(QWidget* parent) :
 	m_colorSchemeBox->addItem("Blue to yellow", "blue-yellow");
 	m_colorSchemeBox->addItem("Purple", "purples");
 	elevationLayout->addWidget(m_colorSchemeBox);
-	connect(m_colorSchemeBox,
-	        static_cast<void(QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
-	        [=](const int item) {
-				emit themeChanged(theme());
-			});
+	m_colorRampViewer = new ColorRampViewer(colorRamp(), this);
+	elevationLayout->addWidget(m_colorRampViewer);
+
+	connect(m_colorSchemeBox, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
+	        [this](const int item) {
+		        emit colorRampChanged(colorRamp());
+				m_colorRampViewer->setColorRamp(colorRamp());
+	        });
 
 	m_showWaterLevelBox = new QCheckBox("Show water level", m_settingsWidget);
 	m_showWaterLevelBox->setChecked(true);
 	connect(m_showWaterLevelBox, &QCheckBox::stateChanged,
 	        this, &BackgroundDock::showWaterPlaneChanged);
-	layout->addWidget(m_showWaterLevelBox, 2, 0, Qt::AlignLeft | Qt::AlignVCenter);
+	layout->addWidget(m_showWaterLevelBox, 3, 0, Qt::AlignLeft | Qt::AlignVCenter);
 
 	m_waterLevelSettings = new QWidget(this);
-	layout->addWidget(m_waterLevelSettings, 3, 0, Qt::AlignLeft | Qt::AlignVCenter);
+	layout->addWidget(m_waterLevelSettings, 4, 0, Qt::AlignLeft | Qt::AlignVCenter);
 
 	QHBoxLayout* waterLevelLayout = new QHBoxLayout(m_waterLevelSettings);
 	waterLevelLayout->setContentsMargins(30, 0, 0, 0);
@@ -84,11 +103,6 @@ BackgroundDock::BackgroundDock(QWidget* parent) :
 	});
 	connect(m_waterLevelSlider, &QSlider::valueChanged,
 	        this, &BackgroundDock::updateLabels);
-	connect(m_colorSchemeBox,
-	        static_cast<void(QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
-	        [=](const int item) {
-				emit themeChanged(theme());
-			});
 
 	m_showContoursBox = new QCheckBox("Show contours", m_settingsWidget);
 	m_showContoursBox->setChecked(true);
@@ -131,8 +145,26 @@ bool BackgroundDock::showElevation() {
 	return m_showElevationBox->isChecked();
 }
 
-QString BackgroundDock::theme() {
-	return m_colorSchemeBox->currentData().toString();
+ColorRamp BackgroundDock::colorRamp() {
+	QString rampName = m_colorSchemeBox->currentData().toString();
+	if (rampName == "blue-yellow") {
+		ColorRamp blueYellow;
+		blueYellow.addStop(0 / 6.0f, QColor{49, 54, 149});
+		blueYellow.addStop(1 / 6.0f, QColor{69, 117, 180});
+		blueYellow.addStop(2 / 6.0f, QColor{116, 173, 209});
+		blueYellow.addStop(3 / 6.0f, QColor{171, 217, 233});
+		blueYellow.addStop(4 / 6.0f, QColor{224, 243, 248});
+		blueYellow.addStop(5 / 6.0f, QColor{255, 255, 191});
+		blueYellow.addStop(6 / 6.0f, QColor{254, 224, 144});
+		return blueYellow;
+	} else if (rampName == "purples") {
+		ColorRamp purples;
+		purples.addStop(0 / 3.0f, QColor{63, 1, 125});
+		purples.addStop(2 / 3.0f, QColor{192, 212, 230});
+		purples.addStop(3 / 3.0f, QColor{241, 240, 246});
+		return purples;
+	}
+	return ColorRamp{};
 }
 
 bool BackgroundDock::showWaterPlane() {

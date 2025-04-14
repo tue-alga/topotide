@@ -141,13 +141,24 @@ int RiverCli::runComputation(const QStringList& args) {
 		}
 	}
 
+	if (!boundary.rasterize().isValid()) {
+		std::cerr << "The computation cannot run as the boundary is invalid. A valid "
+		             "boundary does not self-intersect and does not visit "
+		             "any points more than once.\n";
+		return 1;
+	}
+
 	std::cerr << "Computing input graph...\n";
-	InputGraph inputGraph(heightMap,
-	                      boundary,
-	                      units);
+	InputGraph inputGraph(heightMap, boundary);
+
+	if (inputGraph.containsNodata()) {
+		std::cerr << "The computation cannot run as there are nodata values inside the boundary.\n";
+		return 1;
+	}
 
 	std::cerr << "Computing input DCEL...\n";
 	auto inputDcel = std::make_shared<InputDcel>(inputGraph);
+	inputDcel->computeGradientFlow();
 
 	std::cerr << "Computing MS complex...     ";
 	auto msComplex = std::make_shared<MsComplex>();

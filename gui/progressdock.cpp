@@ -39,6 +39,7 @@ void ProgressDock::startTask(const QString& name) {
 	task.name = name;
 	task.timer.start();
 	tasks << task;
+	tree->scrollToBottom();
 }
 
 void ProgressDock::setProgress(const QString& name, int progress) {

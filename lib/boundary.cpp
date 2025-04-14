@@ -1,63 +1,97 @@
 #include "boundary.h"
+
+#include <cassert>
+#include <optional>
 #include <unordered_set>
 
-Boundary::Boundary() :
-    m_source(),
-    m_top(),
-    m_sink(),
-    m_bottom() {}
+Boundary::Boundary() : m_path() {}
 
-Boundary::Boundary(int width, int height)
-    : m_source(HeightMap::Coordinate{0, height - 1}, HeightMap::Coordinate{0, 0}),
-      m_top(HeightMap::Coordinate{0, 0}, HeightMap::Coordinate{width - 1, 0}),
-      m_sink(HeightMap::Coordinate{width - 1, 0}, HeightMap::Coordinate{width - 1, height - 1}),
-      m_bottom(HeightMap::Coordinate{width - 1, height - 1}, HeightMap::Coordinate{0, height - 1}) {}
+Boundary::Boundary(int width, int height) {
+	m_path.addPoint(HeightMap::Coordinate{0, height - 1});
+	m_path.addPoint(HeightMap::Coordinate{0, 0});
+	m_path.addPoint(HeightMap::Coordinate{width - 1, 0});
+	m_path.addPoint(HeightMap::Coordinate{width - 1, height - 1});
+	m_path.addPoint(HeightMap::Coordinate{0, height - 1});
+
+	addPermeableRegion({0, 1});
+	addPermeableRegion({2, 3});
+}
 
 Boundary::Boundary(const HeightMap& map) : Boundary(map.width(), map.height()) {}
 
-Boundary::Boundary(Path source, Path top, Path sink, Path bottom) :
-    m_source(source),
-    m_top(top),
-    m_sink(sink),
-    m_bottom(bottom) {}
+Boundary::Boundary(Path path) : m_path(path) {}
 
-Boundary Boundary::rasterize() const {
-	Path source = m_source.rasterize();
-	Path top = m_top.rasterize();
-	Path sink = m_sink.rasterize();
-	Path bottom = m_bottom.rasterize();
+const Path& Boundary::path() const {
+	return m_path;
+}
 
-	auto removeCommonParts = [](Path& p1, Path& p2) {
-		int toRemove = 0;
-		for (int i = 1; i < std::min(p1.length(), p2.length()); i++) {
-			HeightMap::Coordinate c1 = p1.m_points[p1.length() - i];
-			HeightMap::Coordinate c2 = p2.m_points[i];
-			if (c1 == c2) {
-				toRemove = i;
-			}
-			if (abs(c1.m_x - c2.m_x) > 2 ||
-			        abs(c1.m_y - c2.m_y) > 2) {
-				break;
-			}
+void Boundary::movePoint(int index, HeightMap::Coordinate c) {
+	assert(index < m_path.m_points.size());
+	m_path.m_points[index] = c;
+	if (index == 0) {
+		m_path.m_points.back() = c;
+	} else if (index == m_path.m_points.size() - 1) {
+		m_path.m_points.front() = c;
+	}
+}
+
+void Boundary::insertPoint(int index, HeightMap::Coordinate c) {
+	assert(index <= m_path.m_points.size());
+	m_path.m_points.insert(m_path.m_points.begin() + index, c);
+	movePoint(index, c);
+	for (Region& region : m_permeableRegions) {
+		if (region.m_start >= index) {
+			region.m_start++;
 		}
-		p1.m_points.erase(p1.m_points.end() - toRemove, p1.m_points.end());
-		p2.m_points.erase(p2.m_points.begin(), p2.m_points.begin() + toRemove);
-	};
-	removeCommonParts(source, top);
-	removeCommonParts(top, sink);
-	removeCommonParts(sink, bottom);
-	removeCommonParts(bottom, source);
+		if (region.m_end >= index) {
+			region.m_end++;
+		}
+	}
+}
 
-	Boundary result(source, top, sink, bottom);
+void Boundary::addPermeableRegion(Region region) {
+	m_permeableRegions.push_back(region);
+}
 
+void Boundary::setLastPermeableRegion(Region region) {
+	m_permeableRegions.back() = region;
+}
+
+Boundary::Region Boundary::lastPermeableRegion() const {
+	return m_permeableRegions.back();
+}
+
+const std::vector<Boundary::Region>& Boundary::permeableRegions() const {
+	return m_permeableRegions;
+}
+
+void Boundary::removePermeableRegions() {
+	m_permeableRegions.clear();
+}
+
+std::vector<Boundary::Region> Boundary::impermeableRegions() const {
+	std::vector<Boundary::Region> result;
+	for (int i = 0; i < m_permeableRegions.size(); i++) {
+		result.emplace_back(m_permeableRegions[i].m_end,
+		                    m_permeableRegions[(i + 1) % m_permeableRegions.size()].m_start);
+	}
 	return result;
 }
 
-void Boundary::ensureConnection() {
-	m_source.end() = m_top.start();
-	m_top.end() = m_sink.start();
-	m_sink.end() = m_bottom.start();
-	m_bottom.end() = m_source.start();
+Boundary Boundary::rasterize() const {
+	Path path = m_path.rasterize();
+	path.removeSpikes();
+	assert(path.length() > 0);
+
+	Boundary result(path);
+
+	for (const Region& region : m_permeableRegions) {
+		HeightMap::Coordinate start = m_path.m_points[region.m_start];
+		HeightMap::Coordinate end = m_path.m_points[region.m_end];
+		result.addPermeableRegion(Region{*path.closestTo(start), *path.closestTo(end)});
+	}
+
+	return result;
 }
 
 bool Boundary::isValid() const {
@@ -65,27 +99,20 @@ bool Boundary::isValid() const {
 		return std::hash<int>()(c.m_x) ^ (std::hash<int>()(c.m_y) << 1);
 	};
 	std::unordered_set<HeightMap::Coordinate, decltype(CoordinateHasher)> visited(0, CoordinateHasher);
-	for (const Path& p : {m_source, m_top, m_sink, m_bottom}) {
-		for (int i = 0; i < p.m_points.size() - 1; i++) {
-			if (visited.find(p.m_points[i]) != visited.end()) {
-				return false;
-			}
-			visited.insert(p.m_points[i]);
+	for (int i = 0; i < m_path.m_points.size() - 1; i++) {
+		if (visited.find(m_path.m_points[i]) != visited.end()) {
+			return false;
 		}
+		visited.insert(m_path.m_points[i]);
 	}
 	return true;
 }
 
-bool Boundary::isClockwise() const {
+bool Boundary::isClockwise(const Path& path) {
 	long area = 0;
-	auto addSignedAreaContribution = [&area](std::vector<HeightMap::Coordinate> coords) {
-		for (int i = 0; i < coords.size() - 1; i++) {
-			area += (coords[i].m_x * coords[i + 1].m_y - coords[i + 1].m_x * coords[i].m_y);
-		}
-	};
-	addSignedAreaContribution(m_source.m_points);
-	addSignedAreaContribution(m_top.m_points);
-	addSignedAreaContribution(m_sink.m_points);
-	addSignedAreaContribution(m_bottom.m_points);
+	for (int i = 0; i < path.m_points.size() - 1; i++) {
+		area += (path.m_points[i].m_x * path.m_points[i + 1].m_y -
+		         path.m_points[i + 1].m_x * path.m_points[i].m_y);
+	}
 	return area > 0;
 }

@@ -17,12 +17,16 @@ class BackgroundThread : public QThread {
 	public:
 
 		/**
-		 * Creates the background thread.
-		 *
-		 * \param data The river data object.
+		 * Creates a background thread that computes the network for one river
+		 * frame.
 		 */
 		BackgroundThread(const std::shared_ptr<RiverData>& data,
-						const std::shared_ptr<RiverFrame>& frame, double msThreshold);
+						const std::shared_ptr<RiverFrame>& frame);
+		/**
+		 * Creates a background thread that computes the network for all river
+		 * frames.
+		 */
+		BackgroundThread(const std::shared_ptr<RiverData>& data);
 
 		void run() override;
 
@@ -48,7 +52,15 @@ class BackgroundThread : public QThread {
 		 */
 		void taskEnded(QString name);
 
+		/**
+		 * Called when there was an error during the computation.
+		 * \param error A description of the error.
+		 */
+		void errorEncountered(QString error);
+
 	private:
+
+		bool computeForFrame();
 
 		/**
 		 * The river data we are computing on.
@@ -56,14 +68,12 @@ class BackgroundThread : public QThread {
 		std::shared_ptr<RiverData> m_data;
 		std::shared_ptr<RiverFrame> m_frame;
 
-		/**
-		 * The sand threshold for simplifying the Morse-Smale complex.
-		 */
-		double m_msThreshold;
+		QString m_taskPrefix = "";
 
 		void computeInputGraph();
 		void computeInputDcel();
 		void computeMsComplex();
+		void computeMergeTree();
 		void simplifyMsComplex();
 		void msComplexToNetworkGraph();
 };

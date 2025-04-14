@@ -12,9 +12,25 @@ uniform mat3 matrix;
 uniform sampler2D tex;
 
 /**
+ * A texture that defines the color ramp used for drawing elevations.
+ */
+uniform sampler2D elevationRampTex;
+
+/**
+ * A texture that defines in which part of the terrain the contour has to be
+ * drawn.
+ */
+uniform sampler2D contourMaskTex;
+
+/**
  * The water level.
  */
 uniform float waterLevel;
+
+/**
+ * The level of the contour.
+ */
+uniform float contourLevel;
 
 /**
  * Whether to show the background map.
@@ -78,7 +94,10 @@ vec2 texCoord(vec2 p) {
 
 float elevation(vec2 p) {
 	vec2 coordinate = texCoord(p);
-	return dot(texture(tex, coordinate).rgb, vec3(1., 1. / 256, 1. / 65536));
+	return dot(texture(tex, coordinate).rgb,
+	           vec3(255.0f / 256.0f,
+	                255.0f / (256.0f * 256.0f),
+	                255.0f / (256.0f * 256.0f * 256.0f)));
 }
 
 vec3 waterColor(float depth) {
@@ -87,7 +106,7 @@ vec3 waterColor(float depth) {
 	            238.0 * (2.5 - 1.5 * depth)) / 256.0;
 }
 
-bool isOnContour(vec2 p) {
+bool isOnPeriodicContour(vec2 p) {
 	bool onOutline = false;
 	int value = int(contourCount * elevation(p.xy));
 	for (int dx = -1; dx <= 1; dx++) {
@@ -95,6 +114,18 @@ bool isOnContour(vec2 p) {
 			int valueAround = int(contourCount * elevation(
 			            p.xy + vec2(dx * lineWidth, dy * lineHeight)));
 			onOutline = onOutline || (value != valueAround);
+		}
+	}
+	return onOutline;
+}
+
+bool isOnContour(vec2 p, float contourHeight) {
+	bool onOutline = false;
+	for (int dx = -1; dx <= 1; dx++) {
+		for (int dy = -1; dy <= 1; dy++) {
+			float heightAround = elevation(
+						pos.xy + vec2(dx * lineWidth, dy * lineHeight)) - contourHeight;
+			onOutline = onOutline || ((elevation(pos.xy) - contourHeight <= 0) != (heightAround <= 0));
 		}
 	}
 	return onOutline;
@@ -118,7 +149,7 @@ void main() {
 	if (showWaterPlane && waterLevel > height) {
 		color = waterColor(waterLevel - height);
 	} else if (showMap) {
-		color = vec3(height);
+		color = texture(elevationRampTex, vec2(height, 0)).rgb;
 	} else {
 		color = vec3(1);
 	}
@@ -136,25 +167,25 @@ void main() {
 	}
 
 	if (showOutlines) {
-		if (isOnContour(pos.xy)) {
+		if (isOnPeriodicContour(pos.xy)) {
 			color = color * 0.8;
 		}
 	}
 
 	// draw black lines between water and land
 	if (showWaterPlane) {
-		bool onOutline = false;
-		for (int dx = -1; dx <= 1; dx++) {
-			for (int dy = -1; dy <= 1; dy++) {
-				float heightAround = elevation(
-							pos.xy + vec2(dx * lineWidth, dy * lineHeight)) - waterLevel;
-				if ((height - waterLevel <= 0) != (heightAround <= 0)) {
-					onOutline = true;
-				}
-			}
-		}
-		if (onOutline) {
+		if (isOnContour(pos.xy, waterLevel)) {
 			color = color * 0.5;
 		}
+	}
+
+	// draw contour
+	bool onContourMask = texture(contourMaskTex, tPos - vec2(.5 / texWidth, .5 / texHeight)).r > 0.5;
+	// debug: draw mask
+	//if (onContourMask && int(gl_FragCoord.x) % 2 == int(gl_FragCoord.y) % 2) {
+	//	color = vec3(1, 0, 0);
+	//}
+	if (isOnContour(pos.xy, contourLevel) && onContourMask) {
+		color = vec3(0.137, 0.545, 0.271);
 	}
 }

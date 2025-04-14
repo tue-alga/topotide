@@ -7,30 +7,25 @@
 #include "point.h"
 
 /**
- * A cubic function.
+ * A linear function.
  */
-class CubicFunction {
+class LinearFunction {
 
 	public:
 
 		/**
-		 * \short Constructs a new cubic function.
+		 * \short Constructs a new linear function.
 		 *
-		 * Constructs a new cubic function of the form
+		 * Constructs a new linear function of the form
 		 *
 		 * ```
-		 * c0 + c1 * x + c2 * x^2 + c3 * x^3
+		 * c0 + c1 * x
 		 * ```
 		 *
 		 * \param c0 The constant coefficient.
 		 * \param c1 The linear coefficient.
-		 * \param c2 The quadratic coefficient.
-		 * \param c3 The cubic coefficient.
 		 */
-		CubicFunction(double c0 = 0,
-		              double c1 = 0,
-		              double c2 = 0,
-		              double c3 = 0);
+		explicit LinearFunction(double c0 = 0, double c1 = 0);
 
 		/**
 		 * Evaluates the function at a certain *h*-value.
@@ -46,7 +41,7 @@ class CubicFunction {
 		 * \param other The function to add.
 		 * \return The resulting function.
 		 */
-		CubicFunction add(const CubicFunction& other) const;
+		LinearFunction add(const LinearFunction& other) const;
 
 		/**
 		 * Subtracts a function from this function and returns the result.
@@ -54,7 +49,7 @@ class CubicFunction {
 		 * \param other The function to subtract.
 		 * \return The resulting function.
 		 */
-		CubicFunction subtract(const CubicFunction& other) const;
+		LinearFunction subtract(const LinearFunction& other) const;
 
 		/**
 		 * Multiplies this function by a factor and returns the result.
@@ -62,84 +57,81 @@ class CubicFunction {
 		 * \param factor The factor to multiply by.
 		 * \return The resulting function.
 		 */
-		CubicFunction multiply(double factor) const;
+		LinearFunction multiply(double factor) const;
 
 		/**
-		 * Outputs a representation of a cubic function to the given output
+		 * Computes the height *h* such that this function evaluates to the
+		 * given volume. In case c1 == 0, this returns NaN.
+		 *
+		 * \param volume The volume to search for.
+		 * \return The height *h* such that `(*this)(h) == volume` (modulo
+		 * rounding error).
+		 */
+		double heightForVolume(double volume);
+
+		/**
+		 * Outputs a representation of a linear function to the given output
 		 * stream.
 		 *
 		 * @param os The output stream.
-		 * @param f The cubic function to output.
+		 * @param f The linear function to output.
 		 * @return The output stream.
 		 */
 		friend std::ostream& operator<<(std::ostream& os,
-		                                CubicFunction const& f) {
+		                                LinearFunction const& f) {
 			os << f.m_coefficients[0] << " + "
-			   << f.m_coefficients[1] << " h + "
-			   << f.m_coefficients[2] << " h^2 + "
-			   << f.m_coefficients[3] << " h^3";
+			   << f.m_coefficients[1] << " h";
 			return os;
 		}
 
 	private:
 
 		/**
-		 * An array containing the coefficients `c0`, `c1`, `c2` and `c3`, in
-		 * order.
+		 * An array containing the coefficients `c0` and `c1`, in order.
 		 */
-		std::array<double, 4> m_coefficients;
+		std::array<double, 2> m_coefficients;
 };
 
 /**
- * A piecewise cubic function that consists of a sequence of cubic functions,
+ * A piecewise linear function that consists of a sequence of linear functions,
  * with breakpoints between them.
  */
-class PiecewiseCubicFunction {
+class PiecewiseLinearFunction {
 
 	public:
 
 		/**
-		 * Creates a piecewise cubic function that evaluates to zero everywhere.
+		 * Creates a piecewise linear function that evaluates to zero everywhere.
 		 */
-		PiecewiseCubicFunction();
+		PiecewiseLinearFunction();
 
 		/**
-		 * Creates a piecewise cubic function that is defined by just one
-		 * cubic function.
+		 * Creates a piecewise linear function that is defined by just one
+		 * linear function.
 		 *
-		 * \param function The cubic function.
+		 * \param function The linear function.
 		 */
-		PiecewiseCubicFunction(CubicFunction function);
+		PiecewiseLinearFunction(LinearFunction function);
 
 		/**
-		 * Creates a piecewise cubic function that is defined by a sequence of
-		 * cubic functions, with breakpoints between them.
+		 * Creates a piecewise linear function that is defined by a sequence of
+		 * linear functions, with breakpoints between them.
 		 *
 		 * \param breakpoints A list of breakpoints, in ascending order.
-		 * \param functions A list of cubic functions, where `functions[0]` is
+		 * \param functions A list of linear functions, where `functions[0]` is
 		 * the function used for `h < breakpoints[0]`, `functions[1]` is the
 		 * function used for `breakpoints[0] < h < breakpoints[1]`, and so on.
 		 */
-		PiecewiseCubicFunction(std::vector<double> breakpoints,
-		             std::vector<CubicFunction> functions);
+		PiecewiseLinearFunction(std::vector<double> breakpoints,
+		             std::vector<LinearFunction> functions);
 
 		/**
-		 * Creates a piecewise cubic function representing the volume of sand
-		 * above height *h* in the given triangle.
-		 *
-		 * \param p1 The lowest point of the triangle.
-		 * \param p2 The middle point of the triangle.
-		 * \param p3 The highest point of the triangle.
-		 */
-		PiecewiseCubicFunction(Point p1, Point p2, Point p3);
-
-		/**
-		 * Creates a piecewise cubic function representing the volume above
+		 * Creates a piecewise linear function representing the volume above
 		 * height *h* of a quarter pillar with the height of the given point.
 		 *
 		 * \param p The center point of the pillar.
 		 */
-		PiecewiseCubicFunction(Point p);
+		PiecewiseLinearFunction(Point p);
 
 		/**
 		 * Evaluates the function at a certain *h*-value.
@@ -152,19 +144,19 @@ class PiecewiseCubicFunction {
 		double operator()(double h);
 
 		/**
-		 * Outputs a representation of this piecewise cubic function.
+		 * Outputs a representation of this piecewise linear function.
 		 * \param out The output stream to write to.
 		 */
 		void output(std::ostream& out);
 
 		/**
-		 * Returns the cubic function that is used to compute the function value
-		 * of this piecewise cubic function at a certain *h*-value.
+		 * Returns the linear function that is used to compute the function value
+		 * of this piecewise linear function at a certain *h*-value.
 		 *
 		 * \param h The *h*-value.
-		 * \return The cubic function.
+		 * \return The linear function.
 		 */
-		CubicFunction functionAt(double h);
+		LinearFunction functionAt(double h);
 
 		/**
 		 * Adds a function to this function and returns the result.
@@ -172,7 +164,7 @@ class PiecewiseCubicFunction {
 		 * \param other The function to add.
 		 * \return The resulting function.
 		 */
-		PiecewiseCubicFunction add(const PiecewiseCubicFunction& other) const;
+		[[nodiscard]] PiecewiseLinearFunction add(const PiecewiseLinearFunction& other) const;
 
 		/**
 		 * Subtracts a function to this function and returns the result.
@@ -180,7 +172,7 @@ class PiecewiseCubicFunction {
 		 * \param other The function to subtract.
 		 * \return The resulting function.
 		 */
-		PiecewiseCubicFunction subtract(const PiecewiseCubicFunction& other) const;
+		[[nodiscard]] PiecewiseLinearFunction subtract(const PiecewiseLinearFunction& other) const;
 
 		/**
 		 * Multiplies this function by a factor and returns the result.
@@ -188,7 +180,7 @@ class PiecewiseCubicFunction {
 		 * \param factor The factor to multiply by.
 		 * \return The resulting function.
 		 */
-		PiecewiseCubicFunction multiply(double factor) const;
+		[[nodiscard]] PiecewiseLinearFunction multiply(double factor) const;
 
 		/**
 		 * Prunes the piecewise function by removing pieces above the given
@@ -201,15 +193,22 @@ class PiecewiseCubicFunction {
 		void prune(double h);
 
 		/**
-		 * Returns the signed area of the triangle spanned by the three
-		 * given points.
+		 * For all values above the given *h*-value, overwrites the value of
+		 * this piecewise function to be zero.
 		 *
-		 * \param p1 The first point.
-		 * \param p2 The second point.
-		 * \param p3 The third point.
-		 * \return The signed area.
+		 * \param h The *h*-value to prune at.
 		 */
-		static double area(Point p1, Point p2, Point p3);
+		void setToZeroAbove(double h);
+
+		/**
+		 * Computes the height *h* such that this function evaluates to the
+		 * given volume. This assumes that this function is decreasing.
+		 *
+		 * \param volume The volume to search for.
+		 * \return The height *h* such that `(*this)(h) == volume` (modulo
+		 * rounding error).
+		 */
+		double heightForVolume(double volume);
 
 	private:
 
@@ -223,7 +222,7 @@ class PiecewiseCubicFunction {
 		 * `h < breakpoints[0]`, `functions[1]` is the function used for
 		 * `breakpoints[0] < h < breakpoints[1]`, and so on.
 		 */
-		std::vector<CubicFunction> m_functions;
+		std::vector<LinearFunction> m_functions;
 };
 
 #endif // PIECEWISECUBICFUNCTION_H

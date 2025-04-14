@@ -1,9 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file>res/shader/river.vert</file>
-        <file>res/shader/river-blue-yellow.frag</file>
-        <file>res/shader/river-grayscale.frag</file>
-        <file>res/shader/river-purples.frag</file>
+        <file>res/shader/river.frag</file>
         <file>res/images/saddles.png</file>
         <file>res/images/saddles-big.png</file>
         <file>res/icons/compass.svg</file>
@@ -26,6 +24,11 @@
         <file>res/icons/zoom-in.svg</file>
         <file>res/icons/zoom-out.svg</file>
         <file>res/icons/run-build.svg</file>
+        <file>res/icons/run-build-configure.svg</file>
+        <file>res/icons/document-export.svg</file>
+        <file>res/icons/document-close.svg</file>
+        <file>res/icons/edit-reset.svg</file>
+        <file>res/icons/autocorrection.svg</file>
         <file>res/ipe/style.xml</file>
     </qresource>
 </RCC>

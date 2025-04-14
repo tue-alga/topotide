@@ -5,15 +5,7 @@
 #include "path.h"
 
 /**
- * The boundary of the river area. It contains of four parts, which
- * are each represented by a Path. In order, these are:
- *
- * * the source,
- * * the top side,
- * * the sink, and
- * * the bottom side.
- *
- * The boundary can be either in clockwise or counter-clockwise order.
+ * The boundary of the river area.
  */
 class Boundary {
 
@@ -37,34 +29,44 @@ class Boundary {
 		Boundary(const HeightMap& map);
 
 		/**
-		 * Constructs a boundary with the given path components.
-		 *
-		 * \param source The source path.
-		 * \param top The top path.
-		 * \param sink The sink path.
-		 * \param bottom The bottom path.
+		 * Constructs a boundary with the given path and no permeable regions.
 		 */
-		Boundary(Path source, Path top, Path sink, Path bottom);
+		Boundary(Path path);
+
+		/// Returns the path this boundary consists of.
+		const Path& path() const;
+
+		/// Moves the point at the given index to the given coordinate. If index
+		/// points at the first or last point, this makes sure that the boundary
+		/// stays closed by moving the last or first point too, respectively.
+		void movePoint(int index, HeightMap::Coordinate c);
+		/// Inserts a point at the given index at the given coordinate.
+		void insertPoint(int index, HeightMap::Coordinate c);
 
 		/**
-		 * The source path.
+		 * A part of the boundary. \ref m_start is considered to be in clockwise
+		 * order before \ref m_end.
 		 */
-		Path m_source;
+		struct Region {
+			/// Index of the first vertex of the boundary which is in the
+			/// region.
+			int m_start;
+			/// Index of the last vertex of the boundary which is in the
+			/// region.
+			int m_end;
+		};
 
 		/**
-		 * The top path.
+		 * Adds a permeable region to the boundary. Throws if the newly added
+		 * region overlaps with an existing one.
 		 */
-		Path m_top;
+		void addPermeableRegion(Region region);
+		void setLastPermeableRegion(Region region);
+		Region lastPermeableRegion() const;
+		void removePermeableRegions();
 
-		/**
-		 * The sink path.
-		 */
-		Path m_sink;
-
-		/**
-		 * The bottom path.
-		 */
-		Path m_bottom;
+		const std::vector<Region>& permeableRegions() const;
+		std::vector<Region> impermeableRegions() const;
 
 		/**
 		 * Returns a new boundary that approximates this boundary, which is made
@@ -73,16 +75,6 @@ class Boundary {
 		 * of the paths.
 		 */
 		Boundary rasterize() const;
-
-		/**
-		 * Moves the last vertex of each component of the boundary so that it
-		 * coincides with the first vertex of the next path. This is designed
-		 * to be called after the user has dragged a vertex: as long as the
-		 * code handling that ensures that the last vertex of a component is
-		 * never draggable, this method fixes up the non-connectedness of the
-		 * boundary.
-		 */
-		void ensureConnection();
 
 		/**
 		 * Checks if the boundary is valid, that is, if it does not visit a
@@ -97,10 +89,20 @@ class Boundary {
 		 */
 		bool isValid() const;
 
+		static bool isClockwise(const Path& path);
+
+	private:
 		/**
-		 * Checks if the boundary is in clockwise order.
+		 * The path of this boundary, in clockwise order. Invariant: the start
+		 * and end of the path are the same coordinate.
 		 */
-		bool isClockwise() const;
+		Path m_path;
+
+		/**
+		 * The intervals of the boundary (on \ref m_path) which are to be
+		 * considered permeable.
+		 */
+		std::vector<Region> m_permeableRegions;
 };
 
 #endif // BOUNDARY_H

@@ -4,6 +4,9 @@
 #include <QLabel>
 #include <QWidget>
 
+#include <optional>
+
+#include "heightmap.h"
 #include "units.h"
 
 /**
@@ -24,13 +27,20 @@ class CoordinateLabel : public QLabel {
 	public slots:
 
 		/**
-		 * Sets the coordinate that is shown in this label.
+		 * Sets the coordinate and height that is shown in this label.
 		 *
-		 * \param x The x-coordinate.
-		 * \param y The y-coordinate.
+		 * \param coord The x- and y-coordinates.
 		 * \param height The height value.
 		 */
-		void setCoordinate(int x, int y, double height);
+		void setCoordinateAndHeight(HeightMap::Coordinate coord, double height);
+
+		/**
+		 * Sets the height that is shown in this label, and clears the
+		 * coordinate.
+		 *
+		 * \param height The height value.
+		 */
+		void setHeight(double height);
 
 		/**
 		 * Sets the unit convertor used for displaying the coordinates in this
@@ -47,10 +57,8 @@ class CoordinateLabel : public QLabel {
 
 	private:
 		Units m_units;
-		bool m_showing = false;
-		int m_x;
-		int m_y;
-		double m_height;
+		std::optional<HeightMap::Coordinate> m_coord;
+		std::optional<double> m_height;
 
 		void updateLabel();
 };

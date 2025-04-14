@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <iostream>
 #include <queue>
+#include <type_traits>
 #include <vector>
 
 /**
@@ -237,8 +238,8 @@ class Dcel {
 				 */
 				HalfEdge outgoing() const {
 					assert(isInitialized());
-			        return m_dcel->halfEdge(m_dcel->m_vertices[id()].m_outgoing);
-		        }
+					return m_dcel->halfEdge(m_dcel->m_vertices[id()].m_outgoing);
+				}
 
 				/**
 				 * Returns an incoming half-edge of this vertex (the twin
@@ -432,7 +433,7 @@ class Dcel {
 
 					int degree = 0;
 
-					forAllOutgoingEdges([&degree](HalfEdge e) {
+					forAllOutgoingEdges([&degree](HalfEdge) {
 						degree++;
 					});
 
@@ -2417,6 +2418,12 @@ class Dcel {
 		/**
 		 * Prints a representation of this DCEL for debugging purposes.
 		 *
+		 * If VertexData, HalfEdgeData, and/or FaceData have their own
+		 * `output(std::ostream&)` method(s), then these are called for each
+		 * vertex, half-edge, and/or face, to augment the DCEL's own output.
+		 * This works best if the output of these methods is short and contains
+		 * no line breaks.
+		 *
 		 * \note This method is designed not to crash, even if the DCEL is
 		 * invalid.
 		 *
@@ -2429,7 +2436,12 @@ class Dcel {
 				VertexImpl v = m_vertices[i];
 				out << std::setw(10) << i << "   " <<
 				    std::setw(16) << v.m_outgoing <<
-				    std::setw(4) << (v.removed ? "x" : "") << "\n";
+				    std::setw(4) << (v.removed ? "x" : "");
+				if constexpr (requires {v.m_data.output(out);}) {
+					out << "    ";
+					v.m_data.output(out);
+				}
+				out << "\n";
 			}
 
 			out << "Half-edges:\n";
@@ -2443,7 +2455,12 @@ class Dcel {
 				       std::setw(12) << e.m_next << "   " <<
 				       std::setw(12) << e.m_twin << "   " <<
 				       std::setw(20) << e.m_incidentFace <<
-				       std::setw(4) << (e.removed ? "x" : "") << "\n";
+				       std::setw(4) << (e.removed ? "x" : "");
+				if constexpr (requires {e.m_data.output(out);}) {
+					out << "    ";
+					e.m_data.output(out);
+				}
+				out << "\n";
 			}
 
 			out << "Faces:\n";
@@ -2452,7 +2469,12 @@ class Dcel {
 				FaceImpl f = m_faces[i];
 				out << std::setw(10) << i << "   " <<
 				       std::setw(16) << f.m_boundary <<
-				       std::setw(4) << (f.removed ? "x" : "") << "\n";
+				       std::setw(4) << (f.removed ? "x" : "");
+				if constexpr (requires {f.m_data.output(out);}) {
+					out << "    ";
+					f.m_data.output(out);
+				}
+				out << "\n";
 			}
 
 			out << std::flush;

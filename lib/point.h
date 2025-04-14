@@ -166,11 +166,14 @@ inline bool operator!=(const Point& lhs, const Point& rhs) {
  * otherwise.
  */
 inline bool operator<(const Point& lhs, const Point& rhs) {
+	// avoid nan weirdness (nan != nan, etc.)
+	double a = std::isnan(lhs.h) ? std::numeric_limits<double>::infinity() : lhs.h;
+	double b = std::isnan(rhs.h) ? std::numeric_limits<double>::infinity() : rhs.h;
 	// lexicographic comparison; this avoids degenerate cases where several
 	// points have the same height
-	return lhs.h < rhs.h
-			|| (lhs.h == rhs.h && lhs.x < rhs.x)
-			|| (lhs.h == rhs.h && lhs.x == rhs.x && lhs.y < rhs.y);
+	return (a < b)
+			|| (a == b && lhs.x < rhs.x)
+			|| (a == b && lhs.x == rhs.x && lhs.y < rhs.y);
 }
 
 /**

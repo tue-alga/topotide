@@ -112,7 +112,6 @@ EsriGridReader::readGridFile(
 	for (int y = 0; y < height; ++y) {
 		for (int x = 0; x < width; ++x) {
 			double elevation = elevations[width * y + x];
-			unsigned int value = 0xffffff;
 			if (elevation != nodata) {
 				heightMap.setElevationAt(x, y, elevation);
 			}

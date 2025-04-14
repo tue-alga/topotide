@@ -29,9 +29,9 @@ class UnionFindNode {
 
 /**
  * A union-find data structure with path compression, but without the rank
- * heuristic. This means that merging is done
- * deterministically: merging node 1 into node 2 makes 2 the representative;
- * merging 2 into 1 makes 1 the representative.
+ * heuristic. This means that merging is done deterministically: merging node 1
+ * into node 2 makes 2 the representative; merging 2 into 1 makes 1 the
+ * representative.
  */
 class UnionFind {
 

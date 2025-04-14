@@ -4,10 +4,11 @@ project(topotide
 	DESCRIPTION "TopoTide"
 	HOMEPAGE_URL "https://github.com/tue-alga/ttga"
 	LANGUAGES CXX)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 option(DISABLE_SLOW_ASSERTS "Disable slow asserts in debug mode" OFF)
 option(BUILD_TESTS "Build the unit tests" ON)
+option(EXPERIMENTAL_FINGERS_SUPPORT "Include support for detecting fingers (warning: experimental!)" OFF)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOMOC ON)
@@ -20,6 +21,10 @@ find_package(GDAL REQUIRED)
 if(DISABLE_SLOW_ASSERTS)
 	add_definitions(-DDISABLE_SLOW_ASSERTS)
 endif(DISABLE_SLOW_ASSERTS)
+
+if(EXPERIMENTAL_FINGERS_SUPPORT)
+	add_definitions(-DEXPERIMENTAL_FINGERS_SUPPORT)
+endif(EXPERIMENTAL_FINGERS_SUPPORT)
 
 add_subdirectory(lib)
 add_subdirectory(gui)

@@ -89,34 +89,43 @@ BoundaryReader::readBoundary(const QString& fileName,
 
 	int index = 4;
 
-	Boundary boundary;
+	Path source, top, sink, bottom;
 	try {
-		readPath(boundary.m_source, numbers, sourceLength, width, height, index);
-		readPath(boundary.m_top, numbers, topLength, width, height, index);
-		readPath(boundary.m_sink, numbers, sinkLength, width, height, index);
-		readPath(boundary.m_bottom, numbers, bottomLength, width, height, index);
+		readPath(source, numbers, sourceLength, width, height, index);
+		readPath(top, numbers, topLength, width, height, index);
+		readPath(sink, numbers, sinkLength, width, height, index);
+		readPath(bottom, numbers, bottomLength, width, height, index);
 	} catch (std::runtime_error& e) {
 		error = e.what();
 		return Boundary(width, height);
 	}
 
 	// consistency checks
-	if (boundary.m_source.end() != boundary.m_top.start()) {
+	if (source.end() != top.start()) {
 		error = "The source does not connect to the top";
 		return Boundary(width, height);
 	}
-	if (boundary.m_top.end() != boundary.m_sink.start()) {
+	if (top.end() != sink.start()) {
 		error = "The top does not connect to the sink";
 		return Boundary(width, height);
 	}
-	if (boundary.m_sink.end() != boundary.m_bottom.start()) {
+	if (sink.end() != bottom.start()) {
 		error = "The sink does not connect to the bottom";
 		return Boundary(width, height);
 	}
-	if (boundary.m_bottom.end() != boundary.m_source.start()) {
+	if (bottom.end() != source.start()) {
 		error = "The bottom does not connect to the source";
 		return Boundary(width, height);
 	}
+
+	source.append(top);
+	source.append(sink);
+	source.append(bottom);
+	Boundary boundary(source);
+
+	boundary.addPermeableRegion({0, sourceLength - 1});
+	boundary.addPermeableRegion(
+	    {sourceLength + topLength - 2, sourceLength + topLength + sinkLength - 3});
 
 	return boundary;
 }

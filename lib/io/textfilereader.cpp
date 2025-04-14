@@ -76,14 +76,16 @@ TextFileReader::readTextFile(
 		return HeightMap();
 	}
 
-	double minHeight = numbers[4].toDouble(&ok);
+	// minHeight and maxHeight are not used anymore, but are still read for
+	// compatibility with old files
+	[[maybe_unused]] double minHeight = numbers[4].toDouble(&ok);
 	if (!ok) {
 		error = QString("Minimum height should be a number (was [%1])").
 		        arg(numbers[4]);
 		return HeightMap();
 	}
 
-	double maxHeight = numbers[5].toDouble(&ok);
+	[[maybe_unused]] double maxHeight = numbers[5].toDouble(&ok);
 	if (!ok) {
 		error = QString("Maximum height should be a number (was [%1])").
 		        arg(numbers[5]);

@@ -6,16 +6,21 @@ CoordinateLabel::CoordinateLabel(QWidget *parent) : QLabel(parent) {
 	setText("");
 }
 
-void CoordinateLabel::setCoordinate(int x, int y, double height) {
-	m_showing = true;
-	m_x = x;
-	m_y = y;
+void CoordinateLabel::setCoordinateAndHeight(HeightMap::Coordinate coord, double height) {
+	m_coord = coord;
+	m_height = height;
+	updateLabel();
+}
+
+void CoordinateLabel::setHeight(double height) {
+	m_coord = std::nullopt;
 	m_height = height;
 	updateLabel();
 }
 
 void CoordinateLabel::clear() {
-	m_showing = false;
+	m_coord = std::nullopt;
+	m_height = std::nullopt;
 	updateLabel();
 }
 
@@ -25,11 +30,14 @@ void CoordinateLabel::setUnits(Units units) {
 }
 
 void CoordinateLabel::updateLabel() {
-	if (m_showing) {
+	if (m_coord && m_height) {
 		setText(QString("<p>x: <b>%1</b>, y: <b>%2</b>, "
 		                "height: <b>%3</b>")
-		        .arg(m_x).arg(m_y)
-		        .arg(UnitsHelper::formatElevation(m_height)));
+		        .arg(m_coord->m_x).arg(m_coord->m_y)
+		        .arg(UnitsHelper::formatElevation(*m_height)));
+	} else if (m_height) {
+		setText(QString("height: <b>%1</b>")
+		        .arg(UnitsHelper::formatElevation(*m_height)));
 	} else {
 		setText("");
 	}

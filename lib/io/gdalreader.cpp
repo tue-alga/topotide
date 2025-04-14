@@ -10,7 +10,7 @@ GdalReader::readGdalFile(
 	std::string fileNameString = fileName.toStdString();
 	const char* fileNameCharArray = fileNameString.c_str();
 
-	CPLSetErrorHandler([](CPLErr errorClass, CPLErrorNum errorNumber, const char* errorString) {
+	CPLSetErrorHandler([](CPLErr, CPLErrorNum, const char*) {
 		// suppress stderr output
 	});
 
@@ -52,7 +52,6 @@ GdalReader::readGdalFile(
 	for (int y = 0; y < height; ++y) {
 		for (int x = 0; x < width; ++x) {
 			double elevation = buffer[i];
-			unsigned int value = 0xffffff;
 			if (!hasNoData || elevation != nodata) {
 				heightMap.setElevationAt(x, y, elevation);
 			}

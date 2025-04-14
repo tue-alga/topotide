@@ -20,9 +20,14 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
+#include <qopengltexture.h>
 #include <vector>
 
 #include "riverwidget.h"
+
+#include "boundary.h"
+#include "boundarycreator.h"
 
 RiverWidget::RiverWidget() {
 	QSurfaceFormat format;
@@ -49,17 +54,18 @@ void RiverWidget::mouseMoveEvent(QMouseEvent* event) {
 	mousePos = Point(x, y, 0);
 	mouseInBounds = m_riverFrame->m_heightMap.isInBounds(x, y);
 	if (mouseInBounds) {
-		hoveredCoordinateChanged(x, y,
+		hoveredCoordinateChanged(HeightMap::Coordinate{x, y},
 		                         (float) m_riverFrame->m_heightMap.elevationAt(x, y));
 	} else {
 		emit mouseLeft();
 	}
 
 	if (m_dragging) {
-		if (m_inBoundaryEditMode && m_draggedVertex != nullptr) {
-			m_draggedVertex->m_x = mousePos.x;
-			m_draggedVertex->m_y = mousePos.y;
-			m_boundaryToEdit.ensureConnection();
+		if (m_mode == Mode::EDIT_BOUNDARY && m_draggedVertex.has_value()) {
+			HeightMap::Coordinate newPosition{static_cast<int>(mousePos.x),
+			                                  static_cast<int>(mousePos.y)};
+			newPosition = m_riverFrame->m_heightMap.clampToBounds(newPosition);
+			m_boundaryToEdit.movePoint(*m_draggedVertex, newPosition);
 		} else {
 			QPointF delta = event->pos() - m_previousMousePos;
 			QTransform translation;
@@ -79,19 +85,57 @@ void RiverWidget::mousePressEvent(QMouseEvent* event) {
 
 	m_dragging = true;
 
-	if (m_inBoundaryEditMode) {
-		m_draggedVertex = hoveredBoundaryVertex();
-		if (m_draggedVertex == nullptr) {
-			std::pair<Path*, int> newMidpoint = hoveredBoundaryMidpoint();
-			Path* p = newMidpoint.first;
-			if (p != nullptr) {
-				int i = newMidpoint.second;
-				HeightMap::Coordinate c1 = p->m_points[i];
-				HeightMap::Coordinate c2 = p->m_points[i + 1];
+	if (m_mode == Mode::GENERATE_BOUNDARY_SEED) {
+		if (mouseInBounds) {
+			HeightMap::Coordinate seed(static_cast<int>(mousePos.x), static_cast<int>(mousePos.y));
+			m_boundaryCreator->setSeed(seed);
+			if (m_boundaryCreator->getPath()) {
+				m_boundaryToEdit = Boundary(*m_boundaryCreator->getPath());
+				m_mode = Mode::SET_SOURCE_START;
+				m_boundaryToEdit.removePermeableRegions();
+				m_boundaryToEdit.addPermeableRegion(Boundary::Region{0, 0});
+				emit statusMessage("Click to indicate where on the boundary the source starts and "
+				                   "ends (in clockwise order)");
+			} else {
+				m_mode = Mode::NORMAL;
+				emit boundaryEdited(std::nullopt);
+				emit statusMessage("");
+			}
+		}
+
+	} else if (m_mode == Mode::SET_SOURCE_START || m_mode == Mode::SET_SOURCE_END ||
+	           m_mode == Mode::SET_SINK_START || m_mode == Mode::SET_SINK_END) {
+		switch (m_mode) {
+			case Mode::SET_SOURCE_START:
+				m_mode = Mode::SET_SOURCE_END;
+				break;
+			case Mode::SET_SOURCE_END:
+				m_mode = Mode::SET_SINK_START;
+				m_boundaryToEdit.addPermeableRegion(Boundary::Region{0, 0});
+				emit statusMessage("Click to indicate where on the boundary the sink starts and ends (in clockwise order)");
+				break;
+			case Mode::SET_SINK_START:
+				m_mode = Mode::SET_SINK_END;
+				break;
+			case Mode::SET_SINK_END:
+				m_mode = Mode::NORMAL;
+				emit statusMessage("");
+				emit boundaryEdited(m_boundaryToEdit);
+				break;
+		}
+
+	} else if (m_mode == Mode::EDIT_BOUNDARY) {
+		const Path& path = m_boundaryToEdit.path();
+		m_draggedVertex = hoveredPathVertex(path);
+		if (!m_draggedVertex.has_value()) {
+			std::optional<int> newMidpoint = hoveredBoundaryMidpoint();
+			if (newMidpoint.has_value()) {
+				HeightMap::Coordinate c1 = path.m_points[*newMidpoint];
+				HeightMap::Coordinate c2 = path.m_points[*newMidpoint + 1];
 				HeightMap::Coordinate midP((c1.m_x + c2.m_x) / 2,
 				                           (c1.m_y + c2.m_y) / 2);
-				p->m_points.insert(p->m_points.begin() + i + 1, midP);
-				m_draggedVertex = &(p->m_points[i + 1]);
+				m_boundaryToEdit.insertPoint(*newMidpoint + 1, midP);
+				m_draggedVertex = *newMidpoint + 1;
 			}
 		}
 	}
@@ -102,17 +146,17 @@ void RiverWidget::mousePressEvent(QMouseEvent* event) {
 	update();
 }
 
-void RiverWidget::mouseReleaseEvent(QMouseEvent* event) {
+void RiverWidget::mouseReleaseEvent(QMouseEvent*) {
 	if (!m_riverFrame) {
 		return;
 	}
 
 	m_dragging = false;
 	setCursor(Qt::ArrowCursor);
-	m_draggedVertex = nullptr;
+	m_draggedVertex = std::nullopt;
 }
 
-void RiverWidget::leaveEvent(QEvent* event) {
+void RiverWidget::leaveEvent(QEvent*) {
 	if (!m_riverFrame) {
 		return;
 	}
@@ -157,6 +201,7 @@ void RiverWidget::initializeGL() {
 		QOpenGLContext::currentContext());
 	gl->initializeOpenGLFunctions();
 	updateTexture();
+	updateElevationRampTexture();
 	initializeShaders();
 }
 
@@ -167,7 +212,7 @@ void RiverWidget::initializeShaders() {
 	vshader->compileSourceFile(":/res/shader/river.vert");
 
 	QOpenGLShader *fshader = new QOpenGLShader(QOpenGLShader::Fragment);
-	fshader->compileSourceFile(":/res/shader/river-" + m_theme + ".frag");
+	fshader->compileSourceFile(":/res/shader/river.frag");
 
 	program = new QOpenGLShaderProgram();
 	program->addShader(vshader);
@@ -180,25 +225,33 @@ void RiverWidget::updateTexture() {
 		return;
 	}
 	const HeightMap& heightMap = m_riverFrame->m_heightMap;
-	double min = heightMap.minimumElevation();
-	double max = heightMap.maximumElevation();
+	double min = m_riverData->minimumElevation();
+	double max = m_riverData->maximumElevation();
 	QImage image(heightMap.width(), heightMap.height(), QImage::Format::Format_ARGB32);
 	for (int y = 0; y < heightMap.height(); ++y) {
 		for (int x = 0; x < heightMap.width(); ++x) {
 			double elevation = heightMap.elevationAt(x, y);
-			if (elevation == HeightMap::nodata) {
+			if (std::isnan(elevation)) {
 				image.setPixel(x, y, 0x00000000);
 			} else {
-				unsigned int value =
-				    0xff000000 +
-				    0xffffff * (elevation - m_riverData->minimumElevation()) /
-				        (m_riverData->maximumElevation() - m_riverData->minimumElevation());
+				unsigned int value = 0xff000000 + 0xffffff * (elevation - min) / (max - min);
 				image.setPixel(x, y, value);
 			}
 		}
 	}
 	texture = new QOpenGLTexture(image);
 	texture->setWrapMode(QOpenGLTexture::ClampToEdge);
+
+	QImage maskImage(heightMap.width(), heightMap.height(), QImage::Format::Format_ARGB32);
+	maskImage.fill(QColor{"black"});
+	contourMaskTexture = new QOpenGLTexture(maskImage);
+	contourMaskTexture->setWrapMode(QOpenGLTexture::ClampToEdge);
+	contourMaskTexture->setMagnificationFilter(QOpenGLTexture::Nearest);
+}
+
+void RiverWidget::updateElevationRampTexture() {
+	elevationRampTexture = new QOpenGLTexture(m_colorRamp.toImage());
+	elevationRampTexture->setWrapMode(QOpenGLTexture::ClampToEdge);
 }
 
 void RiverWidget::paintGL() {
@@ -215,6 +268,10 @@ void RiverWidget::paintGL() {
 	program->setUniformValue(
 	    "waterLevel", (float) ((m_waterLevel - m_riverData->minimumElevation()) /
 	                           (m_riverData->maximumElevation() - m_riverData->minimumElevation())));
+	program->setUniformValue(
+	    "contourLevel",
+	    (float) ((m_contourLevel - m_riverData->minimumElevation()) /
+	             (m_riverData->maximumElevation() - m_riverData->minimumElevation())));
 	program->setUniformValue("showMap", m_showElevation);
 	program->setUniformValue("showOutlines", m_showOutlines);
 	program->setUniformValue("contourCount", m_contourCount);
@@ -229,6 +286,14 @@ void RiverWidget::paintGL() {
 		program->setUniformValue("tex", 0);
 		program->setUniformValue("texWidth", (float) texture->width());
 		program->setUniformValue("texHeight", (float) texture->height());
+	}
+	if (elevationRampTexture != nullptr) {
+		elevationRampTexture->bind(1);
+		program->setUniformValue("elevationRampTex", 1);
+	}
+	if (contourMaskTexture != nullptr) {
+		contourMaskTexture->bind(2);
+		program->setUniformValue("contourMaskTex", 2);
 	}
 
 	// draw background map using OpenGL
@@ -257,40 +322,112 @@ void RiverWidget::paintGL() {
 		drawGrid(p);
 	}
 
-	if (m_inBoundaryEditMode) {
+	if (m_mode == Mode::GENERATE_BOUNDARY_SEED) {
+		if (mouseInBounds) {
+			HeightMap::Coordinate seed(static_cast<int>(mousePos.x), static_cast<int>(mousePos.y));
+			m_boundaryCreator->setSeed(seed);
+			std::optional<Path> path = m_boundaryCreator->getPath();
+			if (path) {
+				p.setPen(QPen(QBrush(EDITABLE_BOUNDARY_COLOR), 2));
+				drawPath(p, *path);
+			}
+		}
+
+	} else if (m_mode == Mode::SET_SOURCE_START || m_mode == Mode::SET_SOURCE_END ||
+	           m_mode == Mode::SET_SINK_START || m_mode == Mode::SET_SINK_END) {
+		std::optional<int> hovered = hoveredNonPermeableBoundaryVertex(m_boundaryToEdit);
+		if (hovered) {
+			if (m_mode == Mode::SET_SOURCE_START || m_mode == Mode::SET_SINK_START) {
+				m_boundaryToEdit.setLastPermeableRegion(Boundary::Region{*hovered, *hovered});
+			} else {
+				m_boundaryToEdit.setLastPermeableRegion(Boundary::Region{
+				    m_boundaryToEdit.lastPermeableRegion().m_start, *hovered});
+			}
+		}
+		drawBoundaryCreatorState(p);
+
+	} else if (m_mode == Mode::EDIT_BOUNDARY) {
 		drawBoundaryEditable(p, m_boundaryToEdit);
 
 	} else {
 		if (m_riverData) {
+			p.setPen(QPen(QBrush(BOUNDARY_COLOR), 2));
 			drawBoundary(p, m_riverData->boundaryRasterized());
 		}
 
-		if (m_showInputDcel &&
-		        m_riverFrame->m_inputDcel != nullptr) {
-			QReadLocker lock(&(m_riverFrame->m_inputDcelLock));
-			drawGradientPairs(p, *m_riverFrame->m_inputDcel);
+		if (m_showInputDcel && m_riverFrame->m_inputDcel != nullptr) {
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+			if (m_showSimplified && m_riverFrame->m_simplifiedInputDcel != nullptr) {
+				QReadLocker lock(&(m_riverFrame->m_simplifiedInputDcelLock));
+				drawGradientPairs(p, *m_riverFrame->m_simplifiedInputDcel);
+			} else {
+#endif
+				QReadLocker lock(&(m_riverFrame->m_inputDcelLock));
+				drawGradientPairs(p, *m_riverFrame->m_inputDcel);
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+			}
+#endif
 		}
 
-		if (m_showMsComplex &&
-		        m_riverFrame->m_msComplex != nullptr) {
+		if (m_showMsComplex && m_riverFrame->m_msComplex != nullptr) {
 			QReadLocker locker(&(m_riverFrame->m_msComplexLock));
 			drawMsComplex(p, *m_riverFrame->m_msComplex);
 		}
 
-		if (m_showMsComplex &&
-		        m_riverFrame->m_inputDcel != nullptr) {
-			QReadLocker lock(&(m_riverFrame->m_inputDcelLock));
-			drawCriticalPoints(p, *m_riverFrame->m_inputDcel);
+		if (m_showCriticalPoints && m_riverFrame->m_inputDcel != nullptr) {
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+			if (m_showSimplified && m_riverFrame->m_simplifiedInputDcel != nullptr) {
+				QReadLocker lock(&(m_riverFrame->m_simplifiedInputDcelLock));
+				drawCriticalPoints(p, *m_riverFrame->m_simplifiedInputDcel);
+			} else {
+#endif
+				QReadLocker lock(&(m_riverFrame->m_inputDcelLock));
+				drawCriticalPoints(p, *m_riverFrame->m_inputDcel);
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+			}
+#endif
 		}
 
-		if (m_showNetwork &&
-		        m_riverFrame->m_msComplex != nullptr &&
-		        m_riverFrame->m_networkGraph != nullptr) {
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+		if (m_showSpurs && m_riverFrame->m_inputDcel != nullptr) {
+			if (m_showSimplified && m_riverFrame->m_simplifiedInputDcel != nullptr) {
+				QReadLocker lock(&(m_riverFrame->m_simplifiedInputDcelLock));
+				drawSpurs(p, *m_riverFrame->m_simplifiedInputDcel);
+			}
+		}
+
+		if (m_showFingers &&
+		        m_riverFrame->m_fingers != nullptr) {
+			drawFingers(p, *m_riverFrame->m_fingers);
+		}
+#endif
+
+		if (m_showNetwork && m_riverFrame->m_msComplex != nullptr &&
+		    m_riverFrame->m_networkGraph != nullptr) {
 			drawNetwork(p, *m_riverFrame->m_networkGraph);
 		}
 
+		if (m_pointToHighlight) {
+			QPointF p2 = convertPoint(*m_pointToHighlight);
+			p.setPen(Qt::NoPen);
+			p.setBrush(QColor{"#dd4422"});
+			p.drawEllipse(p2, 4, 4);
+		}
+
 		if (mouseInBounds) {
-			drawVertex(p, mousePos, VertexType::disconnected);
+			QPointF p2 = convertPoint(mousePos);
+			p.setPen(Qt::NoPen);
+			p.setBrush(QColor{"#238b45"});
+			p.drawEllipse(p2, 4, 4);
+		}
+
+		for (const InputDcel::HalfEdge& edge : m_edgesToDraw) {
+			p.setPen(QPen(QColor{"#123456"}, 2));
+			p.drawLine(convertPoint(edge.origin().data().p),
+			           convertPoint(edge.destination().data().p));
+		}
+		for (const Point& point : m_pointsToDraw) {
+			drawVertex(p, point, VertexType::saddle);
 		}
 	}
 }
@@ -301,23 +438,23 @@ void RiverWidget::drawUninitializedMessage(QPainter& p) const {
 	p.drawRect(rect());
 
 	p.setOpacity(0.2);
-	p.drawPixmap(QRect(rect().bottomRight() - QPoint(370, 345), rect().bottomRight() + QPoint(-10, 15)),
-	            m_topoTideBackgroundImage);
+	p.drawPixmap(
+	    QRect(rect().bottomRight() - QPoint(370, 345), rect().bottomRight() + QPoint(-10, 15)),
+	    m_topoTideBackgroundImage);
 	p.setOpacity(1);
 
 	p.setBrush(Qt::NoBrush);
 	p.setPen(QPen(palette().text().color()));
 	QTextDocument text;
 	text.setHtml("<div style='text-align: center;'>"
-	             "<h2>No river loaded</h2>"
-	             "<p>To open a river, use <i>File &gt; Open DEM...</i> or "
-	             "drag-and-drop an image or text file containing elevation "
-	             "data onto this window.</p>");
+	             "<h2>No elevation data loaded</h2>"
+	             "<p>To open a DEM, use <i>File &gt; Open DEM</i> or "
+	             "drag-and-drop a file containing elevation data onto this window.</p>");
 	text.setTextWidth(rect().width());
 	text.drawContents(&p, rect());
 }
 
-void RiverWidget::drawGrid(QPainter &p) const {
+void RiverWidget::drawGrid(QPainter& p) const {
 	double opacity = (m_transform.m11() - 10.0) / 50.0;
 	if (opacity > 1) {
 		opacity = 1;
@@ -326,76 +463,72 @@ void RiverWidget::drawGrid(QPainter &p) const {
 	p.setPen(QPen(QBrush(QColor(0, 0, 0, a)), 1));
 
 	// vertical lines
-	float yTop = convertPoint(0, 0).y();
-	float yBottom = convertPoint(0, texture->height() - 1).y();
-	for (int x = 0; x < texture->width(); x++) {
-		float xF = convertPoint(x, 0).x();
+	double yTop = std::max(0.0, convertPoint(0, 0).y());
+	double yBottom =
+	    std::min(static_cast<double>(height()), convertPoint(0, m_riverData->height() - 1).y());
+	int firstLineX = std::max(0, static_cast<int>(inverseConvertPoint(rect().topLeft()).x()));
+	int lastLineX = std::min(m_riverData->width() - 1,
+	                         static_cast<int>(inverseConvertPoint(rect().bottomRight()).x()));
+	for (int x = firstLineX; x <= lastLineX; x++) {
+		double xF = convertPoint(x, 0).x();
 		p.drawLine(QPointF(xF, yTop), QPointF(xF, yBottom));
 	}
 
 	// horizontal lines
-	float xLeft = convertPoint(0, 0).x();
-	float xRight = convertPoint(texture->width() - 1, 0).x();
-	for (int y = 0; y < texture->height(); y++) {
-		float yF = convertPoint(0, y).y();
+	double xLeft = std::max(0.0, convertPoint(0, 0).x());
+	double xRight =
+	    std::min(static_cast<double>(width()), convertPoint(m_riverData->width() - 1, 0).x());
+	int firstLineY = std::max(0, static_cast<int>(inverseConvertPoint(rect().topLeft()).y()));
+	int lastLineY = std::min(m_riverData->height() - 1,
+	                         static_cast<int>(inverseConvertPoint(rect().bottomRight()).y()));
+	for (int y = firstLineY; y <= lastLineY; y++) {
+		double yF = convertPoint(0, y).y();
 		p.drawLine(QPointF(xLeft, yF), QPointF(xRight, yF));
 	}
 }
 
-void RiverWidget::drawBoundary(
-        QPainter& p, const Boundary& boundary) const {
-
-	p.setPen(QPen(QBrush(QColor("black")), 2));
-	drawPath(p, boundary.m_top);
-	drawPath(p, boundary.m_bottom);
-
-	p.setPen(QPen(QBrush(QColor(13, 110, 190)), 3));
-	drawPath(p, boundary.m_source);
-	p.setPen(QPen(QBrush(QColor(163, 99, 4)), 3));
-	drawPath(p, boundary.m_sink);
+void RiverWidget::drawBoundary(QPainter& p, const Boundary& boundary) const {
+	drawPath(p, boundary.path());
+	for (const Boundary::Region& region : boundary.permeableRegions()) {
+		p.setPen(QPen(QBrush(PERMEABLE_BOUNDARY_COLOR), 3));
+		drawPermeableRegion(p, boundary.path(), region);
+	}
 }
 
 void RiverWidget::drawBoundaryEditable(QPainter& p, Boundary& boundary) {
-
-	const HeightMap::Coordinate* hovered = hoveredBoundaryVertex();
-	if (hovered != nullptr) {
-		drawBoundaryVertex(p, *hovered, true);
-	}
-
+	p.setPen(QPen(QBrush(EDITABLE_BOUNDARY_COLOR), 2));
 	drawBoundary(p, boundary);
 
-	if (hovered == nullptr) {
-		std::pair<const Path*, int> mid = hoveredBoundaryMidpoint();
-		if (mid.first != nullptr) {
-			HeightMap::Coordinate c1 = mid.first->m_points[mid.second];
-			HeightMap::Coordinate c2 = mid.first->m_points[mid.second + 1];
-			Point midP((c1.m_x + c2.m_x) / 2.0,
-			           (c1.m_y + c2.m_y) / 2.0,
-			           0);
-			p.setPen(QPen(QBrush(QColor(60, 60, 60, 128)), 0));
-			p.setBrush(QBrush(QColor(255, 255, 255, 128)));
-			QPointF p2 = convertPoint(midP);
-			p.drawEllipse(p2.x() - 4, p2.y() - 4, 8, 8);
+	if (m_draggedVertex.has_value()) {
+		drawBoundaryVertex(p, boundary.path().m_points[*m_draggedVertex], true);
+	} else {
+		const std::optional<int> hovered = hoveredPathVertex(boundary.path());
+		if (hovered.has_value()) {
+			drawBoundaryVertex(p, boundary.path().m_points[*hovered], true);
+		} else {
+			std::optional<int> mid = hoveredBoundaryMidpoint();
+			if (mid.has_value()) {
+				HeightMap::Coordinate c1 = boundary.path().m_points[*mid];
+				HeightMap::Coordinate c2 = boundary.path().m_points[*mid + 1];
+				Point midP((c1.m_x + c2.m_x) / 2.0, (c1.m_y + c2.m_y) / 2.0, 0);
+				p.setPen(QPen(QBrush(QColor(60, 60, 60, 128)), 0));
+				p.setBrush(QBrush(QColor(255, 255, 255, 128)));
+				QPointF p2 = convertPoint(midP);
+				p.drawEllipse(p2.x() - 4, p2.y() - 4, 8, 8);
+			}
 		}
 	}
 
-	drawBoundaryVertices(p, boundary.m_source);
-	drawBoundaryVertices(p, boundary.m_top);
-	drawBoundaryVertices(p, boundary.m_sink);
-	drawBoundaryVertices(p, boundary.m_bottom);
+	drawBoundaryVertices(p, boundary.path());
 }
 
 void RiverWidget::drawBoundaryVertices(QPainter& p, const Path& path) const {
 	for (HeightMap::Coordinate c : path.m_points) {
-		if (c != path.end()) {
-			drawBoundaryVertex(p, c);
-		}
-	};
+		drawBoundaryVertex(p, c);
+	}
 }
 
-void RiverWidget::drawBoundaryVertex(
-        QPainter& p, HeightMap::Coordinate c,
-        bool outlined) const {
+void RiverWidget::drawBoundaryVertex(QPainter& p, HeightMap::Coordinate c, bool outlined) const {
 
 	if (outlined) {
 		p.setPen(QPen(QBrush(QColor(80, 130, 255)), 8));
@@ -408,15 +541,43 @@ void RiverWidget::drawBoundaryVertex(
 	p.drawEllipse(p2.x() - 4, p2.y() - 4, 8, 8);
 }
 
-void RiverWidget::drawPath(
-        QPainter& p, const Path& path) const {
+void RiverWidget::drawBoundaryCreatorState(QPainter& p) {
+	// the entire boundary path
+	Path path = m_boundaryToEdit.path();
+	p.setPen(QPen(QBrush(EDITABLE_BOUNDARY_COLOR), 2));
+	drawPath(p, path);
 
+	// permeable regions
+	for (const Boundary::Region& region : m_boundaryToEdit.permeableRegions()) {
+		p.setPen(QPen(QBrush(PERMEABLE_BOUNDARY_COLOR), 3));
+		drawPermeableRegion(p, path, region);
+
+		p.setPen(QPen(QBrush(QColor(60, 60, 60)), 0));
+		p.setBrush(PERMEABLE_BOUNDARY_COLOR);
+		QPointF p2 = convertPoint(path.m_points[region.m_start].m_x,
+		                          path.m_points[region.m_start].m_y);
+		p.drawEllipse(p2.x() - 4, p2.y() - 4, 8, 8);
+		p2 = convertPoint(path.m_points[region.m_end].m_x, path.m_points[region.m_end].m_y);
+		p.drawEllipse(p2.x() - 4, p2.y() - 4, 8, 8);
+	}
+}
+
+void RiverWidget::drawPath(QPainter& p, const Path& path) const {
 	std::vector<HeightMap::Coordinate> points = path.m_points;
 	for (int i = 0; i < (int) (points.size()) - 1; i++) {
 		HeightMap::Coordinate p1 = points[i];
 		HeightMap::Coordinate p2 = points[i + 1];
-		p.drawLine(convertPoint(p1.m_x, p1.m_y),
-		           convertPoint(p2.m_x, p2.m_y));
+		p.drawLine(convertPoint(p1.m_x, p1.m_y), convertPoint(p2.m_x, p2.m_y));
+	}
+}
+
+void RiverWidget::drawPermeableRegion(QPainter& p, const Path& path,
+                                      const Boundary::Region& region) const {
+	std::vector<HeightMap::Coordinate> points = path.m_points;
+	for (int i = region.m_start; i != region.m_end; i = (i + 1) % path.length()) {
+		HeightMap::Coordinate p1 = points[i];
+		HeightMap::Coordinate p2 = points[i + 1];
+		p.drawLine(convertPoint(p1.m_x, p1.m_y), convertPoint(p2.m_x, p2.m_y));
 	}
 }
 
@@ -429,11 +590,9 @@ void RiverWidget::drawCriticalPoints(QPainter& p, InputDcel& dcel) const {
 	for (size_t i = 0; i < dcel.halfEdgeCount(); i++) {
 		InputDcel::HalfEdge e = dcel.halfEdge(i);
 		if (e.origin().id() < e.destination().id()) {
-			continue;  // avoid drawing the same edge twice
+			continue; // avoid drawing the same edge twice
 		}
-		if (!e.data().pairedWithVertex && !e.data().pairedWithFace &&
-		    !e.twin().data().pairedWithVertex && !e.twin().data().pairedWithFace &&
-		    std::isfinite(e.data().p.h)) {
+		if (dcel.isCritical(e) && inBounds(e.data().p)) {
 			p.setPen(QPen(black, 6));
 			p.drawLine(0.5 * (convertPoint(e.origin().data().p) + convertPoint(e.data().p)),
 			           0.5 * (convertPoint(e.destination().data().p) + convertPoint(e.data().p)));
@@ -445,7 +604,7 @@ void RiverWidget::drawCriticalPoints(QPainter& p, InputDcel& dcel) const {
 
 	for (size_t i = 0; i < dcel.faceCount(); i++) {
 		InputDcel::Face f = dcel.face(i);
-		if (f.data().pairedWithEdge == -1 && std::isfinite(f.data().p.h)) {
+		if (dcel.isCritical(f) && inBounds(f.data().p)) {
 			p.setPen(QPen(black, 1));
 			p.setBrush(red);
 			QPolygonF face;
@@ -460,7 +619,7 @@ void RiverWidget::drawCriticalPoints(QPainter& p, InputDcel& dcel) const {
 	p.setBrush(blue);
 	for (size_t i = 0; i < dcel.vertexCount(); i++) {
 		InputDcel::Vertex v = dcel.vertex(i);
-		if (v.data().pairedWithEdge == -1 && std::isfinite(v.data().p.h)) {
+		if (dcel.isCritical(v) && inBounds(v.data().p)) {
 			p.drawEllipse(convertPoint(v.data().p), 4, 4);
 		}
 	}
@@ -470,23 +629,164 @@ void RiverWidget::drawGradientPairs(QPainter& p, InputDcel& dcel) const {
 	QPen blue(QBrush(QColor(60, 90, 220)), 2);
 	QPen red(QBrush(QColor(220, 90, 60)), 2);
 
+	QFont font(p.font());
+	font.setPixelSize(10);
+	p.setFont(font);
+
 	for (size_t i = 0; i < dcel.halfEdgeCount(); i++) {
 		InputDcel::HalfEdge e = dcel.halfEdge(i);
-		if (!std::isfinite(e.data().p.h)) {
+		if (!inBounds(e.data().p)) {
 			continue;
 		}
 		if (e.data().pairedWithVertex) {
 			p.setPen(blue);
-			drawArrow(p, convertPoint(e.origin().data().p),
-			          (convertPoint(e.origin().data().p) + convertPoint(e.data().p)) * 0.5);
+			if (m_drawGradientPairsAsTrees) {
+				p.drawLine(convertPoint(e.origin().data().p), convertPoint(e.destination().data().p));
+			} else {
+				drawArrow(p, convertPoint(e.origin().data().p),
+						(convertPoint(e.origin().data().p) + convertPoint(e.data().p)) * 0.5);
+			}
 		}
-		if (e.data().pairedWithFace && std::isfinite(e.incidentFace().data().p.h)) {
+		if (e.data().pairedWithFace && inBounds(e.incidentFace().data().p)) {
 			p.setPen(red);
-			drawArrow(p, convertPoint(e.data().p),
-			          (convertPoint(e.data().p) + convertPoint(e.incidentFace().data().p)) * 0.5);
+			if (m_drawGradientPairsAsTrees) {
+				if (std::isfinite(e.incidentFace().data().p.h) && std::isfinite(e.oppositeFace().data().p.h)) {
+					p.drawLine(convertPoint(e.incidentFace().data().p),
+					           convertPoint(e.twin().incidentFace().data().p));
+					if (m_transform.m11() > 50) {
+						QPointF center = convertPoint(e.data().p);
+						QPointF origin = convertPoint(e.origin().data().p);
+						QPointF destination = convertPoint(e.destination().data().p);
+						QPointF vector = destination - origin;
+						QPointF perpendicular(-vector.y(), vector.x());
+						double length = std::hypot(perpendicular.x(), perpendicular.y());
+						QPointF offset = perpendicular * (10.0 / length);
+						if (rect().contains(center.toPoint())) {
+							PiecewiseLinearFunction& volume = e.data().volumeAbove;
+							p.save();
+							p.translate(center + offset);
+							p.rotate(180 * std::atan2(-vector.y(), -vector.x()) / M_PI);
+							p.drawText(QRectF(QPointF(-100, -100), QSizeF(200, 200)),
+							           Qt::AlignCenter,
+							           QString("%1 m").arg(volume.heightForVolume(m_networkDelta)));
+							p.restore();
+							p.save();
+							p.translate(center - offset);
+							p.rotate(180 * std::atan2(vector.y(), vector.x()) / M_PI);
+							PiecewiseLinearFunction twinVolume = e.twin().data().volumeAbove;
+							p.drawText(QRectF(QPointF(-100, -100), QSizeF(200, 200)),
+							           Qt::AlignCenter,
+							           QString("%1 m").arg(twinVolume.heightForVolume(m_networkDelta)));
+							p.restore();
+						}
+					}
+				}
+			} else {
+				drawArrow(p, convertPoint(e.data().p),
+						(convertPoint(e.data().p) + convertPoint(e.incidentFace().data().p)) * 0.5);
+			}
+		}
+	}
+
+	if (m_drawGradientPairsAsTrees) {
+		p.setPen(blue);
+		for (size_t i = 0; i < dcel.vertexCount(); i++) {
+			InputDcel::Vertex v = dcel.vertex(i);
+			if (std::isfinite(v.data().p.h) && dcel.isBlueLeaf(v)) {
+				p.drawEllipse(convertPoint(v.data().p), 2, 2);
+			}
+		}
+		p.setPen(red);
+		for (size_t i = 0; i < dcel.faceCount(); i++) {
+			InputDcel::Face f = dcel.face(i);
+			if (std::isfinite(f.data().p.h) && dcel.isRedLeaf(f)) {
+				p.drawEllipse(convertPoint(f.data().p), 2, 2);
+			}
 		}
 	}
 }
+
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+void RiverWidget::drawSpurs(QPainter& p, InputDcel& dcel) const {
+	std::vector<QColor> colors = {
+	    // ColorBrewer colors, qualitative Set1
+	    QColor{228, 26, 28}, QColor{55, 126, 184},  QColor{77, 175, 74}, QColor{152, 78, 163},
+	    QColor{255, 127, 0}, QColor{153, 153, 153}, QColor{166, 86, 40}, QColor{247, 129, 191},
+	};
+	
+	// background shading
+	p.setPen(Qt::NoPen);
+	p.setOpacity(0.2);
+
+	int color = 0;
+	for (size_t i = 0; i < dcel.faceCount(); i++) {
+		InputDcel::Face f = dcel.face(i);
+		if (std::isfinite(f.data().p.h) && dcel.isRedLeaf(f)) {
+			if (f.data().isSignificant) {
+				p.setBrush(QBrush(colors[color++ % colors.size()]));
+				QPolygonF polygon;
+				for (int vId : f.data().spurBoundary) {
+					polygon << convertPoint(dcel.vertex(vId).data().p);
+				}
+				p.drawPath(makePathRounded(polygon));
+			}
+		}
+	}
+
+	// outline
+	p.setOpacity(1);
+	p.setBrush(Qt::NoBrush);
+
+	color = 0;
+	for (size_t i = 0; i < dcel.faceCount(); i++) {
+		InputDcel::Face f = dcel.face(i);
+		if (std::isfinite(f.data().p.h) && dcel.isRedLeaf(f)) {
+			if (f.data().isSignificant) {
+				p.setPen(QPen(colors[color++ % colors.size()], 1));
+				QPolygonF polygon;
+				for (int vId : f.data().spurBoundary) {
+					polygon << convertPoint(dcel.vertex(vId).data().p);
+				}
+				p.drawPath(makePathRounded(polygon));
+			}
+		}
+	}
+
+	// significant leaf and path to top edge
+	QFont font(p.font());
+	font.setPixelSize(10);
+	font.setBold(true);
+	p.setFont(font);
+
+	color = 0;
+	for (size_t i = 0; i < dcel.faceCount(); i++) {
+		InputDcel::Face f = dcel.face(i);
+		if (std::isfinite(f.data().p.h) && dcel.isRedLeaf(f)) {
+			if (f.data().isSignificant) {
+				p.setPen(QPen(colors[color++ % colors.size()], 2));
+				p.drawEllipse(convertPoint(f.data().p), 4, 4);
+				double flankingHeight = f.data().flankingHeight;
+				p.drawText(
+					QRectF(convertPoint(f.data().p) + QPointF(-100, -87), QSizeF(200, 200)),
+					Qt::AlignCenter, QString("%1 m").arg(flankingHeight));
+
+				// draw path upwards until top edge
+				QPolygonF path;
+				for (int faceId : f.data().pathToTopEdge) {
+					InputDcel::Face face = dcel.face(faceId);
+					path << convertPoint(face.data().p);
+				}
+				InputDcel::HalfEdge topEdge = dcel.halfEdge(f.data().topEdge);
+				path << convertPoint(topEdge.data().p);
+				p.drawPath(makePathRounded(path));
+				if (std::isfinite(topEdge.oppositeFace().data().p.h)) {
+					drawArrow(p, convertPoint(topEdge.data().p), convertPoint(topEdge.oppositeFace().data().p));
+				}
+			}
+		}
+	}
+}
+#endif
 
 void RiverWidget::drawArrow(QPainter& p, const QPointF& p1, const QPointF& p2) const {
 	p.drawLine(p1, p2);
@@ -509,12 +809,10 @@ void RiverWidget::drawMsComplex(QPainter& p, MsComplex& msComplex) const {
 		}
 
 		// only draw saddle -> minimum edges
-		if (e.origin().data().type == VertexType::saddle && std::isfinite(e.origin().data().p.h)) {
+		if (e.origin().data().type == VertexType::saddle && inBounds(e.origin().data().p)) {
 			if (m_msEdgesStraight) {
-				p.drawLine(convertPoint(e.origin().data().p.x,
-									e.origin().data().p.y),
-							convertPoint(e.destination().data().p.x,
-									e.destination().data().p.y));
+				p.drawLine(convertPoint(e.origin().data().p.x, e.origin().data().p.y),
+				           convertPoint(e.destination().data().p.x, e.destination().data().p.y));
 			} else {
 				QPolygonF path;
 				InputDcel::HalfEdge saddle = e.data().m_dcelPath.edges()[0];
@@ -572,20 +870,20 @@ void RiverWidget::drawVertex(QPainter& p, Point p1, VertexType type) const {
 	p.setPen(QPen(QBrush(QColor(60, 60, 60)), 0));
 
 	switch (type) {
-		case (VertexType::minimum):
-			p.setBrush(QBrush(QColor(70, 50, 190)));
-			break;
-		case (VertexType::saddle):
-			p.setBrush(QBrush(QColor(70, 190, 50)));
-			break;
-		case (VertexType::maximum):
-			p.setBrush(QBrush(QColor(190, 70, 50)));
-			break;
-		case (VertexType::regular):
-			p.setBrush(QBrush(QColor(150, 150, 150)));
-			break;
-		case (VertexType::disconnected):
-			p.setBrush(QBrush(QColor(180, 180, 40)));
+	case (VertexType::minimum):
+		p.setBrush(QBrush(QColor(70, 50, 190)));
+		break;
+	case (VertexType::saddle):
+		p.setBrush(QBrush(QColor(70, 190, 50)));
+		break;
+	case (VertexType::maximum):
+		p.setBrush(QBrush(QColor(190, 70, 50)));
+		break;
+	case (VertexType::regular):
+		p.setBrush(QBrush(QColor(150, 150, 150)));
+		break;
+	case (VertexType::disconnected):
+		p.setBrush(QBrush(QColor(180, 180, 40)));
 	}
 
 	QPointF p2 = convertPoint(p1);
@@ -594,25 +892,20 @@ void RiverWidget::drawVertex(QPainter& p, Point p1, VertexType type) const {
 
 void RiverWidget::drawMsEdge(QPainter& p, MsComplex::HalfEdge e) const {
 	if (m_msEdgesStraight) {
-		p.drawLine(convertPoint(e.origin().data().p.x,
-		                        e.origin().data().p.y),
-		           convertPoint(e.destination().data().p.x,
-		                        e.destination().data().p.y));
+		p.drawLine(convertPoint(e.origin().data().p.x, e.origin().data().p.y),
+		           convertPoint(e.destination().data().p.x, e.destination().data().p.y));
 	} else {
 		if (e.origin().data().type == VertexType::minimum) {
 			e = e.twin();
 		}
 		for (auto l : e.data().m_dcelPath.edges()) {
-			p.drawLine(convertPoint(l.origin().data().p.x,
-			                        l.origin().data().p.y),
-			           convertPoint(l.destination().data().p.x,
-			                        l.destination().data().p.y));
+			p.drawLine(convertPoint(l.origin().data().p.x, l.origin().data().p.y),
+			           convertPoint(l.destination().data().p.x, l.destination().data().p.y));
 		}
 	}
 }
 
-void RiverWidget::drawNetwork(QPainter& p,
-                              const NetworkGraph& graph) const {
+void RiverWidget::drawNetwork(QPainter& p, const NetworkGraph& graph) const {
 	// sort edges on delta
 	double deltaMax = 0;
 	std::vector<NetworkGraph::Edge> edges;
@@ -626,16 +919,43 @@ void RiverWidget::drawNetwork(QPainter& p,
 		}
 	}
 	std::sort(edges.begin(), edges.end(),
-	          [](NetworkGraph::Edge e1, NetworkGraph::Edge e2) {
-		return e1.delta < e2.delta;
-	});
+	          [](NetworkGraph::Edge e1, NetworkGraph::Edge e2) { return e1.delta < e2.delta; });
 
+	// draw white casing
 	for (NetworkGraph::Edge& e : edges) {
 		double delta = e.delta;
 		QColor color;
-		/*
-		// orange brown
+		double width = 4;
+		if (delta < std::numeric_limits<double>::infinity()) {
+			width = std::max(1.5, 3 - 0.5 * log10(deltaMax / delta));
+		}
+		p.setPen(QPen(QColor{"white"}, width + 2));
+		p.setBrush(Qt::NoBrush);
+		drawGraphEdge(p, e);
+	}
+
+	// draw colored edges
+	for (NetworkGraph::Edge& e : edges) {
+		double delta = e.delta;
+		QColor color;
+		// bubble gum
 		if (delta == std::numeric_limits<double>::infinity()) {
+			color = QColor("#49006a");
+		} else if (delta > deltaMax / 1e1) {
+			color = QColor("#7a0177");
+		} else if (delta > deltaMax / 1e2) {
+			color = QColor("#ae017e");
+		} else if (delta > deltaMax / 1e3) {
+			color = QColor("#dd3497");
+		} else if (delta > deltaMax / 1e4) {
+			color = QColor("#f768a1");
+		} else if (delta > deltaMax / 1e5) {
+			color = QColor("#fa9fb5");
+		} else {
+			color = QColor("#fcc5c0");
+		}
+		// orange brown
+		/*if (delta == std::numeric_limits<double>::infinity()) {
 			color = QColor("#fec44f");
 		} else if (delta > deltaMax / 1e1) {
 			color = QColor("#fe9929");
@@ -650,8 +970,9 @@ void RiverWidget::drawNetwork(QPainter& p,
 		} else {
 			color = QColor("#331609");
 		}*/
+
 		// green blue
-		if (delta == std::numeric_limits<double>::infinity()) {
+		/*if (delta == std::numeric_limits<double>::infinity()) {
 			color = QColor("#c7e9b4");
 		} else if (delta > deltaMax / 1e1) {
 			color = QColor("#7fcdbb");
@@ -665,7 +986,7 @@ void RiverWidget::drawNetwork(QPainter& p,
 			color = QColor("#253494");
 		} else {
 			color = QColor("#081d58");
-		}
+		}*/
 		double width = 4;
 		if (delta < std::numeric_limits<double>::infinity()) {
 			width = std::max(1.5, 3 - 0.5 * log10(deltaMax / delta));
@@ -681,9 +1002,16 @@ void RiverWidget::drawNetwork(QPainter& p,
 }
 
 void RiverWidget::drawGraphEdge(QPainter& p, const NetworkGraph::Edge& e) const {
+	if (e.path.size() < 2) {
+		return;
+	}
+
 	QPolygonF path;
-	for (int i = 0; i < e.path.size(); i++) {
-		if (std::isfinite(e.path[i].h)) {
+	if (inBounds(e.path[0]) && inBounds(e.path[1])) {
+		path << convertPoint((e.path[0].x + e.path[1].x) / 2, (e.path[0].y + e.path[1].y) / 2);
+	}
+	for (int i = 1; i < e.path.size(); i++) {
+		if (inBounds(e.path[i])) {
 			path << convertPoint(e.path[i].x, e.path[i].y);
 		}
 	}
@@ -693,13 +1021,39 @@ void RiverWidget::drawGraphEdge(QPainter& p, const NetworkGraph::Edge& e) const 
 	p.drawPath(makePathRounded(path));
 }
 
+void RiverWidget::drawFingers(QPainter& p, const std::vector<InputDcel::Path>& fingers) const {
+	p.setPen(QPen(QColor{"#ffffff"}, 3 + 2));
+	p.setBrush(Qt::NoBrush);
+	for (auto& finger : fingers) {
+		QPolygonF polygon;
+		finger.forAllVertices([this, &polygon](InputDcel::Vertex v) {
+			if (std::isfinite(v.data().p.h)) {
+				polygon << convertPoint(v.data().p);
+			}
+		});
+		p.drawPath(makePathRounded(polygon));
+	}
+
+	//QColor color{"#238b45"};
+	QColor color{"#cc4c02"};
+	p.setPen(QPen{color, 3});
+	for (auto& finger : fingers) {
+		QPolygonF polygon;
+		finger.forAllVertices([this, &polygon](InputDcel::Vertex v) {
+			if (std::isfinite(v.data().p.h)) {
+				polygon << convertPoint(v.data().p);
+			}
+		});
+		p.drawPath(makePathRounded(polygon));
+	}
+}
+
 QPolygonF RiverWidget::polygonForMsFace(MsComplex::Face f) const {
 	QPolygonF p;
 
 	if (m_msEdgesStraight) {
-		f.forAllBoundaryEdges([&p, this](MsComplex::HalfEdge e) {
-			p.append(convertPoint(e.origin().data().p));
-		});
+		f.forAllBoundaryEdges(
+		    [&p, this](MsComplex::HalfEdge e) { p.append(convertPoint(e.origin().data().p)); });
 	} else {
 		f.forAllBoundaryEdges([&p, this](MsComplex::HalfEdge e) {
 			if (e.origin().data().type == VertexType::minimum) {
@@ -764,8 +1118,8 @@ QPointF RiverWidget::convertPoint(Point p) const {
 
 QPointF RiverWidget::convertPoint(double x, double y) const {
 	QPointF mapped = m_transform.map(
-	            QPointF(x + 0.5, y + 0.5) -
-	            QPointF(m_riverFrame->m_heightMap.width(), m_riverFrame->m_heightMap.height()) / 2);
+	    QPointF(x + 0.5, y + 0.5) -
+	    QPointF(m_riverFrame->m_heightMap.width(), m_riverFrame->m_heightMap.height()) / 2);
 	double stretchFactor = m_units.m_yResolution / m_units.m_xResolution;
 	mapped.setY(mapped.y() * stretchFactor);
 	return mapped + QPointF(width(), height()) / 2;
@@ -776,16 +1130,15 @@ QPointF RiverWidget::inverseConvertPoint(QPointF p) const {
 	QPointF toMap = p - QPointF(width(), height()) / 2;
 	toMap.setY(toMap.y() / stretchFactor);
 	return m_transform.inverted().map(toMap) +
-	        QPointF(m_riverFrame->m_heightMap.width(), m_riverFrame->m_heightMap.height()) / 2 -
-	        QPointF(0.5, 0.5);
+	       QPointF(m_riverFrame->m_heightMap.width(), m_riverFrame->m_heightMap.height()) / 2 -
+	       QPointF(0.5, 0.5);
 }
 
 int RiverWidget::hoveredMsVertex(MsComplex& msComplex) const {
 
 	for (int i = 0; i < msComplex.vertexCount(); i++) {
 		MsComplex::Vertex v = msComplex.vertex(i);
-		if (v.data().p.x == mousePos.x &&
-		    v.data().p.y == mousePos.y) {
+		if (v.data().p.x == mousePos.x && v.data().p.y == mousePos.y) {
 			return v.id();
 		}
 	}
@@ -793,61 +1146,55 @@ int RiverWidget::hoveredMsVertex(MsComplex& msComplex) const {
 	return -1;
 }
 
-HeightMap::Coordinate* RiverWidget::hoveredBoundaryVertex() {
-	HeightMap::Coordinate* result = nullptr;
-	int minDistance = std::numeric_limits<int>::max();
+std::optional<int> RiverWidget::hoveredPathVertex(const Path& p) const {
+	double distanceLimit = 25.0 / m_transform.m11();
+	return p.closestTo(mousePos, distanceLimit);
+}
 
-	auto checkPath = [&](Path& p) {
-		for (HeightMap::Coordinate& c : p.m_points) {
-			int distance = abs(c.m_x - mousePos.x) +
-			               abs(c.m_y - mousePos.y);
-			if (c != p.end() && distance < minDistance) {
-				result = &c;
-				minDistance = distance;
+std::optional<int> RiverWidget::hoveredNonPermeableBoundaryVertex(const Boundary& b) const {
+	double distanceLimit = 25.0 / m_transform.m11();
+	return b.path().closestTo(mousePos, distanceLimit, [&b](int index) -> bool {
+		const std::vector<Boundary::Region>& permeableRegions = b.permeableRegions();
+		// Prohibit taking points that lie in existing permeable regions. Skip
+		// the last one, as that's the one we're currently editing.
+		for (int i = 0; i < permeableRegions.size() - 1; i++) {
+			const Boundary::Region& region = permeableRegions[i];
+			int start = region.m_start;
+			int end = region.m_end;
+			if (start <= end && index >= start && index <= end) {
+				return false;
+			} else if (start > end && (index >= start || index <= end)) {
+				return false;
 			}
-		};
-	};
+		}
+		return true;
+	});
+}
 
-	checkPath(m_boundaryToEdit.m_source);
-	checkPath(m_boundaryToEdit.m_top);
-	checkPath(m_boundaryToEdit.m_sink);
-	checkPath(m_boundaryToEdit.m_bottom);
+std::optional<int> RiverWidget::hoveredBoundaryMidpoint() {
+	std::optional<int> result;
+	double minDistance = std::numeric_limits<int>::max();
+
+	for (int i = 0; i < m_boundaryToEdit.path().length(); i++) {
+		const HeightMap::Coordinate& c1 = m_boundaryToEdit.path().m_points[i];
+		const HeightMap::Coordinate& c2 = m_boundaryToEdit.path().m_points[i + 1];
+		double distance = abs((c1.m_x + c2.m_x) / 2.0 - mousePos.x) +
+							abs((c1.m_y + c2.m_y) / 2.0 - mousePos.y);
+		if (distance < minDistance) {
+			result = i;
+			minDistance = distance;
+		}
+	}
 
 	if (minDistance > 25.0 / m_transform.m11()) {
-		return nullptr;
+		return std::nullopt;
 	}
 
 	return result;
 }
 
-std::pair<Path*, int> RiverWidget::hoveredBoundaryMidpoint() {
-	std::pair<Path*, int> result;
-	double minDistance = std::numeric_limits<int>::max();
-
-	auto checkPath = [&](Path& p) {
-		for (int i = 0; i < p.length(); i++) {
-			const HeightMap::Coordinate& c1 = p.m_points[i];
-			const HeightMap::Coordinate& c2 = p.m_points[i + 1];
-			double distance = abs((c1.m_x + c2.m_x) / 2.0 - mousePos.x) +
-			                  abs((c1.m_y + c2.m_y) / 2.0 - mousePos.y);
-			if (distance < minDistance) {
-				result.first = &p;
-				result.second = i;
-				minDistance = distance;
-			}
-		};
-	};
-
-	checkPath(m_boundaryToEdit.m_source);
-	checkPath(m_boundaryToEdit.m_top);
-	checkPath(m_boundaryToEdit.m_sink);
-	checkPath(m_boundaryToEdit.m_bottom);
-
-	if (minDistance > 25.0 / m_transform.m11()) {
-		return std::make_pair(nullptr, -1);
-	}
-
-	return result;
+bool RiverWidget::inBounds(Point p) const {
+	return m_drawOutOfBounds || std::isfinite(p.h);
 }
 
 void RiverWidget::setRiverData(const std::shared_ptr<RiverData>& data) {
@@ -870,13 +1217,13 @@ void RiverWidget::setDrawBackground(bool drawBackground) {
 	update();
 }
 
-QString RiverWidget::theme() const {
-	return m_theme;
+ColorRamp RiverWidget::colorRamp() const {
+	return m_colorRamp;
 }
 
-void RiverWidget::setTheme(QString theme) {
-	m_theme = theme;
-	initializeShaders();
+void RiverWidget::setColorRamp(ColorRamp colorRamp) {
+	m_colorRamp = colorRamp;
+	updateElevationRampTexture();
 	update();
 }
 
@@ -886,6 +1233,15 @@ double RiverWidget::waterLevel() const {
 
 void RiverWidget::setWaterLevel(double waterLevel) {
 	m_waterLevel = waterLevel;
+	update();
+}
+
+double RiverWidget::contourLevel() const {
+	return m_contourLevel;
+}
+
+void RiverWidget::setContourLevel(double contourLevel) {
+	m_contourLevel = contourLevel;
 	update();
 }
 
@@ -943,6 +1299,24 @@ void RiverWidget::setShowInputDcel(bool showInputDcel) {
 	update();
 }
 
+bool RiverWidget::drawGradientPairsAsTrees() const {
+	return m_drawGradientPairsAsTrees;
+}
+
+void RiverWidget::setDrawGradientPairsAsTrees(bool drawGradientPairsAsTrees) {
+	m_drawGradientPairsAsTrees = drawGradientPairsAsTrees;
+	update();
+}
+
+bool RiverWidget::showCriticalPoints() const {
+	return m_showCriticalPoints;
+}
+
+void RiverWidget::setShowCriticalPoints(bool showCriticalPoints) {
+	m_showCriticalPoints = showCriticalPoints;
+	update();
+}
+
 bool RiverWidget::showMsComplex() const {
 	return m_showMsComplex;
 }
@@ -961,15 +1335,6 @@ void RiverWidget::setMsEdgesStraight(bool msEdgesStraight) {
 	update();
 }
 
-bool RiverWidget::showStriation() const {
-	return m_showStriation;
-}
-
-void RiverWidget::setShowStriation(bool showStriation) {
-	m_showStriation = showStriation;
-	update();
-}
-
 bool RiverWidget::showNetwork() const {
 	return m_showNetwork;
 }
@@ -979,19 +1344,30 @@ void RiverWidget::setShowNetwork(bool showNetwork) {
 	update();
 }
 
-void RiverWidget::setStriationItem(int item) {
-	m_striationItem = item;
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+bool RiverWidget::showSpurs() const {
+	return m_showSpurs;
+}
+
+void RiverWidget::setShowSpurs(bool showSpurs) {
+	m_showSpurs = showSpurs;
 	update();
 }
 
-int RiverWidget::networkPath() const {
-	return m_networkPath;
+bool RiverWidget::showFingers() const {
+	return m_showFingers;
 }
 
-void RiverWidget::setNetworkPath(int path) {
-	m_networkPath = path;
+void RiverWidget::setShowFingers(bool showFingers) {
+	m_showFingers = showFingers;
 	update();
 }
+
+void RiverWidget::setShowSimplified(bool showSimplified) {
+	m_showSimplified = showSimplified;
+	update();
+}
+#endif
 
 double RiverWidget::networkDelta() const {
 	return m_networkDelta;
@@ -1002,23 +1378,62 @@ void RiverWidget::setNetworkDelta(double networkDelta) {
 	update();
 }
 
+void RiverWidget::setPointToHighlight(std::optional<Point> point) {
+	m_pointToHighlight = point;
+	update();
+}
+
+void RiverWidget::setContourMask(QImage mask) {
+	contourMaskTexture = new QOpenGLTexture(mask);
+	contourMaskTexture->setWrapMode(QOpenGLTexture::ClampToEdge);
+	contourMaskTexture->setMagnificationFilter(QOpenGLTexture::Nearest);
+	update();
+}
+
 void RiverWidget::setUnits(Units units) {
 	m_units = units;
 	update();
 }
 
-void RiverWidget::startBoundaryEditMode(const Boundary& boundary) {
-	m_inBoundaryEditMode = true;
-	m_boundaryToEdit = boundary;
+void RiverWidget::startBoundaryGenerateMode() {
+	m_mode = Mode::GENERATE_BOUNDARY_SEED;
+	m_boundaryCreator = BoundaryCreator{m_riverFrame->m_heightMap};
+	emit statusMessage("Select an area surrounded by nodata to draw a boundary around");
 	update();
 }
 
-Boundary RiverWidget::endBoundaryEditMode() {
-	m_inBoundaryEditMode = false;
+void RiverWidget::startSetSourceSinkMode() {
+	m_boundaryToEdit = m_riverData->boundary();
+	m_mode = Mode::SET_SOURCE_START;
+	m_boundaryToEdit.removePermeableRegions();
+	m_boundaryToEdit.addPermeableRegion(Boundary::Region{0, 0});
+	emit statusMessage("Click to indicate where on the boundary the source starts and ends (in clockwise order)");
 	update();
-	return m_boundaryToEdit;
+}
+
+void RiverWidget::startBoundaryEditMode() {
+	m_mode = Mode::EDIT_BOUNDARY;
+	m_boundaryToEdit = Boundary{m_riverData->boundary()};
+	emit statusMessage("Drag points to edit the boundary; drag from the middle of an edge to add a point");
+	update();
+}
+
+void RiverWidget::endBoundaryEditMode() {
+	m_mode = Mode::NORMAL;
+	emit boundaryEdited(m_boundaryToEdit);
+	update();
 }
 
 bool RiverWidget::boundaryEditMode() const {
-	return m_inBoundaryEditMode;
+	return m_mode != Mode::NORMAL;
+}
+
+void RiverWidget::setPointsToDraw(std::vector<Point> pointsToDraw) {
+	m_pointsToDraw = pointsToDraw;
+	update();
+}
+
+void RiverWidget::setEdgesToDraw(std::vector<InputDcel::HalfEdge> edgesToDraw) {
+	m_edgesToDraw = edgesToDraw;
+	update();
 }

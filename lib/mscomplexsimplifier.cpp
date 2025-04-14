@@ -1,5 +1,7 @@
 #include "mscomplexsimplifier.h"
 
+#include <algorithm>
+
 MsComplexSimplifier::MsComplexSimplifier(const std::shared_ptr<MsComplex>& msc,
                                          std::function<void(int)> progressListener) :
     msc(msc),
@@ -40,6 +42,8 @@ MsComplexSimplifier::simplify() {
 		        computeSaddleSignificance(saddle);
 		double delta = significance.first;
 		MsComplex::HalfEdge heaviestSide = significance.second;
+		msc->vertex(saddle.id()).data().m_heaviestSide =
+		    heaviestSide.data().m_dcelPath.edges().front().id();
 
 		// saddles should have degree 2
 		assert(saddle.outgoing().nextOutgoing().nextOutgoing() ==
@@ -56,7 +60,7 @@ MsComplexSimplifier::simplify() {
 		if (saddle.outgoing().incidentFace() != saddle.outgoing().nextOutgoing().incidentFace()) {
 			// actually remove saddle, and merge faces
 			// add sand functions around the saddle together
-			PiecewiseCubicFunction f;
+			PiecewiseLinearFunction f;
 			f = f.add(heaviestSide.incidentFace().data().volumeAbove);
 			f = f.add(heaviestSide.nextOutgoing().incidentFace().data().volumeAbove);
 			f.prune(saddle.data().p.h);
@@ -87,8 +91,11 @@ MsComplexSimplifier::simplify() {
 				edges.push_back(e);
 			});
 			if (edges.size() == 1) {
-				v.remove(v.outgoing());
-				removedVertices = true;
+				if (edges[0].data().m_delta > 0) {
+					edges[0].data().m_delta = 0;
+					edges[0].twin().data().m_delta = 0;
+					removedVertices = true;
+				}
 				continue;
 			}
 			std::sort(edges.begin(), edges.end(),
@@ -106,31 +113,30 @@ MsComplexSimplifier::simplify() {
 
 std::pair<double, MsComplex::HalfEdge>
 MsComplexSimplifier::computeSaddleSignificance(MsComplex::Vertex saddle) {
-	// TODO HACK
-	if (!std::isfinite(saddle.data().p.h)) {
-		return {0, saddle.outgoing()};
-	}
+	//if (saddle.data().isBoundarySaddle) {
+	//	return {0, saddle.outgoing()};
+	//}
 
 	assert(saddle.isInitialized());
 	assert(saddle.data().type == VertexType::saddle);
 
 	double saddleHeight = saddle.data().p.h;
-	double delta = std::numeric_limits<double>::infinity();
 	MsComplex::HalfEdge largestFace;
-	double largestVolume = -std::numeric_limits<double>::infinity();
-	saddle.forAllOutgoingEdges([&](MsComplex::HalfEdge e) {
-		double volumeAboveSaddle =
-		        e.incidentFace().data().volumeAbove(saddleHeight);
-		if (std::isnan(volumeAboveSaddle)) {
-			volumeAboveSaddle = std::numeric_limits<double>::infinity();
-		}
-		if (volumeAboveSaddle > largestVolume) {
-			largestVolume = volumeAboveSaddle;
-			largestFace = e;
-		}
-		delta = std::min(delta, volumeAboveSaddle);
-	});
-	assert(largestFace.isInitialized());
+	
+	MsComplex::HalfEdge e1 = saddle.outgoing();
+	MsComplex::HalfEdge e2 = e1.nextOutgoing();
+	double volume1 = e1.incidentFace().data().volumeAbove(saddleHeight);
+	if (std::isnan(volume1)) {
+		volume1 = std::numeric_limits<double>::infinity();
+	}
+	double volume2 = e2.incidentFace().data().volumeAbove(saddleHeight);
+	if (std::isnan(volume2)) {
+		volume2 = std::numeric_limits<double>::infinity();
+	}
 
-	return {delta, largestFace};
+	if (volume1 > volume2) {
+		return {volume2, e1};
+	} else {
+		return {volume1, e2};
+	}
 }

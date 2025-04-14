@@ -104,3 +104,24 @@ void Path::removeSpikes() {
 		}
 	}
 }
+
+std::optional<int> Path::closestTo(HeightMap::Coordinate c, double distanceLimit) const {
+	return closestTo(Point{static_cast<double>(c.m_x), static_cast<double>(c.m_y), 0}, distanceLimit);
+}
+
+std::optional<int> Path::closestTo(Point p, double distanceLimit, std::function<bool(int)> accept) const {
+	double minimumDistance = distanceLimit;
+	std::optional<int> closest;
+	for (int i = 0; i < m_points.size(); i++) {
+		if (!accept(i)) {
+			continue;
+		}
+		double distance = p.distanceTo(
+		    Point{static_cast<double>(m_points[i].m_x), static_cast<double>(m_points[i].m_y), 0});
+		if (distance < minimumDistance) {
+			minimumDistance = distance;
+			closest = i;
+		}
+	}
+	return closest;
+};

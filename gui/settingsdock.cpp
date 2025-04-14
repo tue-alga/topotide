@@ -19,10 +19,10 @@ SettingsDock::SettingsDock(QWidget* parent) :
 	layout->setRowStretch(1, 1);
 
 	msThresholdSlider = new QSlider(Qt::Horizontal, settingsWidget);
-	msThresholdSlider->setRange(0, 80); // threshold from 10^0 to 10^8
+	msThresholdSlider->setRange(0, 800); // threshold from 10^0 to 10^8
 	msThresholdSlider->setSingleStep(1);
 	msThresholdSlider->setPageStep(10);
-	msThresholdSlider->setValue(40);
+	msThresholdSlider->setValue(400);
 	msThresholdSlider->setToolTip("<p><b>Morse-Smale threshold</b></p>"
 	                              "<p>This value determines how much the Morse-Smale complex is simplified. "
 	                              "If the sand volume on any side of a saddle stays below this threshold, the saddle is removed.</p>");
@@ -31,15 +31,14 @@ SettingsDock::SettingsDock(QWidget* parent) :
 	msThresholdLabel = new QLabel();
 	layout->addWidget(msThresholdLabel, 1, 0, Qt::AlignHCenter | Qt::AlignTop);
 	connect(msThresholdSlider, &QSlider::valueChanged, this, &SettingsDock::updateLabels);
-	connect(msThresholdSlider, &QSlider::valueChanged, [=] {
-		emit msThresholdChanged(msThresholdSlider->value());
-	});
+	connect(msThresholdSlider, &QSlider::valueChanged,
+	        [this] { emit msThresholdChanged(msThresholdSlider->value()); });
 
 	updateLabels();
 }
 
 double SettingsDock::msThreshold() {
-	return pow(10, msThresholdSlider->value() / 10.0);
+	return pow(10, msThresholdSlider->value() / 100.0);
 }
 
 void SettingsDock::setUnits(Units units) {

@@ -1,7 +1,12 @@
 #ifndef PATH_H
 #define PATH_H
 
+#include <functional>
+#include <limits>
+#include <optional>
+
 #include "heightmap.h"
+#include "point.h"
 
 /**
  * Path through a heightmap. A path is a list of points in the
@@ -97,6 +102,18 @@ class Path {
 		 * otherwise.
 		 */
 		bool isValid();
+
+		/// Returns the index of the point on this path that is closest to c. If
+		/// no point is at most `distanceLimit` away from c, returns
+		/// `std::nullopt'.
+		std::optional<int> closestTo(HeightMap::Coordinate c,
+		                             double distanceLimit = std::numeric_limits<double>::infinity()) const;
+		/// Returns the index of the point on this path that is closest to p and
+		/// is accepted by the given lambda. If no accepted point is at most
+		/// `distanceLimit` away from p, returns `std::nullopt'.
+		std::optional<int> closestTo(
+		    Point p, double distanceLimit = std::numeric_limits<double>::infinity(),
+		    std::function<bool(int)> accept = [](int) { return true; }) const;
 
 	private:
 		void appendRasterizedEdgeTo(HeightMap::Coordinate point);

@@ -22,9 +22,8 @@ TimeDock::TimeDock(QWidget* parent) :
 	    "<p>This slider allows you to browse through the frames in the time series.</p>");
 	layout->addWidget(frameSlider, 0, 0);
 
-	connect(frameSlider, &QSlider::valueChanged, [=] {
-		emit frameChanged(frameSlider->value() - 1);
-	});
+	connect(frameSlider, &QSlider::valueChanged,
+	        [this] { emit frameChanged(frameSlider->value() - 1); });
 }
 
 void TimeDock::setFrame(int frame) {

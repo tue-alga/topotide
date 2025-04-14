@@ -18,6 +18,7 @@
 
 #include "backgrounddock.h"
 #include "coordinatelabel.h"
+#include "mergetreedock.h"
 #include "progressdock.h"
 #include "riverdata.h"
 #include "riverwidget.h"
@@ -47,6 +48,7 @@ class RiverGui : public QMainWindow {
 		 */
 		void openFrame();
 		void openFrames();
+		void saveFrame();
 
 		/**
 		 * Opens river data with the given file names.
@@ -54,11 +56,15 @@ class RiverGui : public QMainWindow {
 		void openFramesNamed(QStringList& fileNames);
 		std::shared_ptr<RiverFrame> loadFrame(const QString& fileName, Units& units);
 
+		void resetBoundary();
 		void openBoundary();
 		void saveBoundary();
+		void saveImage();
 
 		void saveGraph();
 		void saveLinkSequence();
+
+		void closeFrame();
 
 		/**
 		 * Shows the about box.
@@ -103,16 +109,6 @@ class RiverGui : public QMainWindow {
 		void initializeDropping();
 
 		/**
-		 * Indicates that a re-computation is needed.
-		 *
-		 * \param onlyNetwork If only the network should be recomputed (see
-		 * RiverData::startComputation() for details).
-		 */
-		void markComputationNeeded(bool onlyNetwork);
-
-		bool m_computationNeeded = false;
-		bool m_onlyNetworkNeeded = false;
-		/**
 		 * Whether the background thread is currently running.
 		 */
 		bool m_computationRunning = false;
@@ -120,10 +116,14 @@ class RiverGui : public QMainWindow {
 		/**
 		 * Starts the background thread to compute the river data.
 		 *
-		 * The computation is run only if needed (see `markComputationNeeded()`)
-		 * and if indicated there, only the network is recomputed.
+		 * \param allFrames If `true`, instructs the background thread to run
+		 * the computation for all frames instead of just the active frame.
 		 */
-		void startComputation();
+		void startComputation(bool allFrames);
+
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+		void computeFingers();
+#endif
 
 		/// The river currently open in the program.
 		std::shared_ptr<RiverData> m_riverData;
@@ -134,8 +134,10 @@ class RiverGui : public QMainWindow {
 		std::shared_ptr<RiverFrame> activeFrame();
 
 		QMenu* fileMenu;
+		QMenu* openMenu;
+		QMenu* exportMenu;
 		QMenu* runMenu;
-		QMenu* editMenu;
+		QMenu* boundaryMenu;
 		QMenu* viewMenu;
 		QMenu* toolsMenu;
 		QMenu* helpMenu;
@@ -149,6 +151,7 @@ class RiverGui : public QMainWindow {
 		UnitsDock* unitsDock;
 		ProgressDock* progressDock;
 		TimeDock* timeDock;
+		MergeTreeDock* mergeTreeDock;
 
 		CoordinateLabel* coordinateLabel;
 
@@ -156,17 +159,33 @@ class RiverGui : public QMainWindow {
 
 		QAction* openAction;
 		QAction* openTimeSeriesAction;
+		QAction* saveFrameAction;
 		QAction* openBoundaryAction;
 		QAction* saveGraphAction;
 		QAction* saveLinkSequenceAction;
 		QAction* saveBoundaryAction;
+		QAction* saveImageAction;
+		QAction* closeAction;
 		QAction* quitAction;
+		QAction* generateBoundaryAction;
+		QAction* setSourceSinkAction;
+		QAction* resetBoundaryAction;
 		QAction* showBackgroundAction;
 		QAction* showInputDcelAction;
+		QAction* drawGradientPairsAsTreesAction;
+		QAction* showCriticalPointsAction;
 		QAction* showMsComplexAction;
+		QAction* showNetworkAction;
 		QAction* msEdgesStraightAction;
+#ifdef EXPERIMENTAL_FINGERS_SUPPORT
+		QAction* computeFingersAction;
+		QAction* showSimplifiedAction;
+		QAction* showSpursAction;
+		QAction* showFingersAction;
+#endif
 		QAction* editBoundaryAction;
 		QAction* computeAction;
+		QAction* computeAllFramesAction;
 		QAction* zoomInAction;
 		QAction* zoomOutAction;
 		QAction* fitToViewAction;

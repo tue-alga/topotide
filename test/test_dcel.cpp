@@ -107,7 +107,7 @@ SCENARIO("DCEL operations") {
 
 		WHEN("calling Vertex::forAllOutgoingEdges()") {
 			int count = 0;
-			a.forAllOutgoingEdges([&count](UnitDcel::HalfEdge e) {
+			a.forAllOutgoingEdges([&count](UnitDcel::HalfEdge) {
 				count++;
 			});
 			THEN("the function is called for each outgoing vertex") {
@@ -117,7 +117,7 @@ SCENARIO("DCEL operations") {
 
 		WHEN("calling Vertex::forAllIncomingEdges()") {
 			int count = 0;
-			a.forAllIncomingEdges([&count](UnitDcel::HalfEdge e) {
+			a.forAllIncomingEdges([&count](UnitDcel::HalfEdge) {
 				count++;
 			});
 			THEN("the function is called for each outgoing vertex") {

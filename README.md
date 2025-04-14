@@ -72,6 +72,7 @@ There are various CMake flags that can be used in the `cmake` invocation.
 | ---------- | -------------- |
 | `BUILD_TESTS` | Builds the unit tests (on by default). |
 | `DISABLE_SLOW_ASSERTS` | Removes the slowest assertions, even when compiling in debug mode. For example the assertions that check if each component of the network stays connected (by doing a complete BFS after every operation of the algorithm) are removed. This makes the program much faster in debug mode. |
+| `EXPERIMENTAL_FINGERS_SUPPORT` | Enables support for finger detection (off by default). This is very experimental. Running finger detection may be buggy and consumes a lot of memory even for fairly small datasets. This will be improved in the future. |
 
 For example:
 

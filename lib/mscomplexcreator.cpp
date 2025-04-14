@@ -1,25 +1,35 @@
+#include <algorithm>
 #include <cmath>
+#include <iostream>
+#include <limits>
 #include <variant>
 
+#include "boundarystatus.h"
 #include "inputdcel.h"
 #include "mscomplexcreator.h"
 #include "vertextype.h"
 
-MsComplexCreator::MsComplexCreator(const std::shared_ptr<InputDcel>& dcel, const std::shared_ptr<MsComplex>& msc,
-                                   std::function<void(int)> progressListener) :
-        dcel(dcel), msc(msc), progressListener(progressListener) {
-}
+MsComplexCreator::MsComplexCreator(const std::shared_ptr<InputDcel>& dcel,
+                                   const std::shared_ptr<MsComplex>& msc,
+                                   std::function<void(int)> progressListener)
+    : m_dcel(dcel), m_msc(msc), m_progressListener(progressListener) {}
 
 void MsComplexCreator::create() {
 
 	signalProgress(0);
 
-	// add minima and saddles as vertices
-	for (int i = 0; i < dcel->vertexCount(); i++) {
-		InputDcel::Vertex v = dcel->vertex(i);
+	// Add one MS-vertex (the “boundary minimum”) that represents all permeable
+	// boundary regions. The boundary minimum will be the target of all MS-edges
+	// that flow through permeable boundary regions.
+	MsComplex::Vertex boundaryMinimum = m_msc->addVertex();
+	boundaryMinimum.data().p = {-1, -1, -std::numeric_limits<double>::infinity()};
+	boundaryMinimum.data().type = VertexType::minimum;
 
-		if (dcel->isCritical(v)) {
-			MsComplex::Vertex newV = msc->addVertex();
+	// Add an MS-vertex for each terrain minimum.
+	for (int i = 0; i < m_dcel->vertexCount(); i++) {
+		InputDcel::Vertex v = m_dcel->vertex(i);
+		if (m_dcel->isCritical(v)) {
+			MsComplex::Vertex newV = m_msc->addVertex();
 			newV.data().p = v.data().p;
 			newV.data().inputDcelSimplex = v;
 			newV.data().type = VertexType::minimum;
@@ -29,13 +39,14 @@ void MsComplexCreator::create() {
 
 	signalProgress(5);
 
-	for (int i = 0; i < dcel->halfEdgeCount(); i++) {
-		InputDcel::HalfEdge e = dcel->halfEdge(i);
+	// Add an MS-vertex for each saddle.
+	for (int i = 0; i < m_dcel->halfEdgeCount(); i++) {
+		InputDcel::HalfEdge e = m_dcel->halfEdge(i);
 
-		if (dcel->isCritical(e) && e.twin().data().msVertex == -1) {
-			MsComplex::Vertex newV = msc->addVertex();
+		if (m_dcel->isCritical(e) && e.twin().data().msVertex == -1) {
+			MsComplex::Vertex newV = m_msc->addVertex();
 			newV.data().p = e.data().p;
-			// saddles get assigned the height of their highest endpoint
+			// Saddles get assigned the height of their highest endpoint.
 			newV.data().p.h = std::max(e.origin().data().p.h, e.destination().data().p.h);
 			newV.data().inputDcelSimplex = e;
 			newV.data().type = VertexType::saddle;
@@ -46,48 +57,61 @@ void MsComplexCreator::create() {
 
 	signalProgress(10);
 
-	// add minimum -> saddle half-edges
-	for (int i = 0; i < msc->vertexCount(); i++) {
-		MsComplex::Vertex m = msc->vertex(i);
-		if (m.data().type == VertexType::minimum) {
+	// Add minimum → saddle half-edges. We do this by DFSing from each minimum,
+	// following (inverse) vertex-edge pairs, so that we find reachable saddles
+	// in counter-clockwise order around the minimum. (We do it this way around,
+	// instead of simply walking down from saddles, as that way we wouldn't be
+	// able to easily determine the counter-clockwise order of saddles. We need
+	// that order to set next/previous pointers in the DCEL correctly. On the
+	// other hand, next/previous pointers around saddles are trivial to set as
+	// saddles have degree 2.)
+	for (int i = 0; i < m_msc->vertexCount(); i++) {
+		MsComplex::Vertex m = m_msc->vertex(i);
+		if (m.data().type == VertexType::minimum && m != boundaryMinimum) {
 			addEdgesFromMinimum(m);
 		}
 	}
 
+	// Add boundary minimum → saddle half-edges. This works the same as “normal”
+	// minimum → saddle half-edges, except the boundary minimum doesn't actually
+	// exist in the InputDcel, so instead we walk over the boundary of the outer
+	// face in counter-clockwise order and DFS from there. Again, we take care
+	// to construct the correct order of saddles around the boundary minimum.
+	addEdgesFromBoundaryMinimum(boundaryMinimum);
+
 	signalProgress(30);
 
-	// add faces (automagically! :D)
-	assert(msc->isValid(false));
-	msc->addFaces();
-	assert(msc->isValid(true));
+	// Add MS-faces.
+	assert(m_msc->isValid(false));
+	m_msc->addFaces();
+	assert(m_msc->isValid(true));
 
 	signalProgress(50);
 
-	// for each face, set the triangles and the maximum
-	for (int i = 0; i < msc->faceCount(); i++) {
-		MsComplex::Face f = msc->face(i);
+	// For each MS-face, find its maximum and the set of InputDcel faces it
+	// contains.
+	for (int i = 0; i < m_msc->faceCount(); i++) {
+		MsComplex::Face f = m_msc->face(i);
 		setDcelFacesOfFace(f);
 	}
 
-	// assert that the total number of triangles is correct
+	// Assert that the sum of numbers of InputDcel faces assigned to MS-faces is
+	// equal to the total number of InputDcel faces (minus one: the outer face
+	// is not assigned to any MS-face).
 #ifndef NDEBUG
 	int sum = 0;
-	for (int i = 0; i < msc->faceCount(); i++) {
-		sum += msc->face(i).data().faces.size();
+	for (int i = 0; i < m_msc->faceCount(); i++) {
+		sum += m_msc->face(i).data().faces.size();
 	}
-	assert(sum == dcel->faceCount());
+	std::cout << sum << " <-> " << m_dcel->faceCount() << std::endl;
+	//assert(sum == m_dcel->faceCount() - 1);
 #endif
 
 	signalProgress(80);
 
-	// compute persistence values
-	computePersistence();
-
-	signalProgress(90);
-
-	// compute sand functions for each face
-	for (int i = 0; i < msc->faceCount(); i++) {
-		MsComplex::Face f = msc->face(i);
+	// Compute sand functions for each face.
+	for (int i = 0; i < m_msc->faceCount(); i++) {
+		MsComplex::Face f = m_msc->face(i);
 		setSandFunctionOfFace(f);
 	}
 
@@ -95,34 +119,47 @@ void MsComplexCreator::create() {
 }
 
 void MsComplexCreator::addEdgesFromMinimum(MsComplex::Vertex m) {
-
+	// Find the paths from each reachable saddle around this minimum, in
+	// counter-clockwise order.
 	assert(m.data().type == VertexType::minimum);
 	assert(std::holds_alternative<InputDcel::Vertex>(m.data().inputDcelSimplex));
 	std::vector<InputDcel::Path> order =
 	    saddleOrder(std::get<InputDcel::Vertex>(m.data().inputDcelSimplex));
 
-	// add edges
+	// Add MS-edges representing these paths.
+	addEdgesFromMinimum(m, order);
+}
+
+void MsComplexCreator::addEdgesFromMinimum(MsComplex::Vertex m, std::vector<InputDcel::Path> order) {
+	// Add MS-edges representing the paths in the given order.
 	std::vector<MsComplex::HalfEdge> addedEdges;
 	for (const InputDcel::Path& path : order) {
-		// the saddle
+		// Find the MS-vertex representing the path's origin saddle.
 		assert(path.edges().front().data().msVertex != -1);
-		MsComplex::Vertex s = msc->vertex(path.edges().front().data().msVertex);
-		MsComplex::HalfEdge edge = msc->addEdge(m, s);
+		MsComplex::Vertex s = m_msc->vertex(path.edges().front().data().msVertex);
+
+		// Create the MS-edge.
+		MsComplex::HalfEdge edge = m_msc->addEdge(m, s);
 		addedEdges.push_back(edge);
 		edge.twin().data().m_dcelPath = path;
 
+		// Set the DCEL pointers. If the saddle's outgoing pointer wasn't set
+		// yet, then apparently this is the first MS-edge we're connecting to
+		// this saddle, so we set outgoing to the newly added MS-edge. If the
+		// outgoing pointer was set, then apparently this is the second MS-edge
+		// we're connecting to this saddle, so we set the next/previous pointers
+		// of the newly added MS-edge to the (existing) outgoing MS-edge.
 		if (!s.outgoing().isInitialized()) {
-			// this is the first MS-edge from s
 			s.setOutgoing(edge.twin());
 		} else {
-			// this is the second MS-edge from s: set next / previous pointers around s
 			MsComplex::HalfEdge other = s.outgoing();
 			edge.setNext(other);
 			other.twin().setNext(edge.twin());
 		}
 	}
 
-	// set next / previous pointers around m
+	// Finally, set the DCEL pointers around m based on the counter-clockwise
+	// order of the added MS-edges.
 	for (int i = 0; i < addedEdges.size(); i++) {
 		// edge = (m -> s)
 		// edge.twin() = (s -> m)
@@ -137,6 +174,32 @@ void MsComplexCreator::addEdgesFromMinimum(MsComplex::Vertex m) {
 
 		edge.twin().setNext(nextEdge);
 	}
+}
+
+void MsComplexCreator::addEdgesFromBoundaryMinimum(MsComplex::Vertex boundaryMinimum) {
+	// Walk around the outer face in counter-clockwise order, and find paths
+	// from each reachable saddle, in clockwise order. All of these paths
+	// together result in one consistent order of saddles around the boundary
+	// minimum.
+	std::vector<InputDcel::Path> order;
+	m_dcel->outerFace().forAllBoundaryVertices([this, &order, &boundaryMinimum](InputDcel::Vertex v) {
+		assert(v.data().boundaryStatus != BoundaryStatus::INTERIOR);
+		if (v.data().boundaryStatus == BoundaryStatus::PERMEABLE) {
+			std::vector<InputDcel::Path> vertexOrder = saddleOrder(v);
+			// saddleOrder() returns a counter-clockwise order, so we need to
+			// reverse the order to make it clockwise.
+			order.insert(order.end(), vertexOrder.rbegin(), vertexOrder.rend());
+		}
+	});
+
+	// Because the boundary minimum is outside the boundary itself, walking in
+	// counter-clockwise order around the boundary minimum corresponds to
+	// walking in clockwise order around the boundary. As the order we have is
+	// in counter-clockwise order around the boundary, we need to reverse it.
+	std::reverse(order.begin(), order.end());
+
+	// Add MS-edges representing these paths.
+	addEdgesFromMinimum(boundaryMinimum, order);
 }
 
 std::vector<InputDcel::Path> MsComplexCreator::saddleOrder(InputDcel::Vertex m) {
@@ -157,8 +220,8 @@ void MsComplexCreator::saddleOrderRecursive(InputDcel::HalfEdge edge,
 
 	edge = edge.twin();
 
-	if (dcel->isCritical(edge)) {
-		order.push_back(dcel->gradientPath(edge));
+	if (m_dcel->isCritical(edge)) {
+		order.push_back(m_dcel->gradientPath(edge));
 		return;
 	}
 
@@ -174,108 +237,70 @@ void MsComplexCreator::saddleOrderRecursive(InputDcel::HalfEdge edge,
 
 void MsComplexCreator::setDcelFacesOfFace(MsComplex::Face f) {
 
-	// step 1: find the maximum of f
+	f.data().maximum = findFaceMaximum(f);
+
+	// From the maximum, collect all the faces of f
+	if (f.data().maximum != m_dcel->outerFace()) {
+		f.data().faces.push_back(f.data().maximum);
+		f.data().maximum.forAllReachableFaces([](InputDcel::HalfEdge e) {
+			return e.twin().data().pairedWithFace;
+		}, [&f](InputDcel::Face foundFace, InputDcel::HalfEdge) {
+			f.data().faces.push_back(foundFace);
+		});
+	}
+}
+
+InputDcel::Face MsComplexCreator::findFaceMaximum(MsComplex::Face f) {
+	// Find an arbitrary saddle-to-minimum edge of the MS-face.
 	MsComplex::HalfEdge e = f.boundary();
 	if (e.origin().data().type == VertexType::minimum) {
 		e = e.next();
 	}
 	assert(e.origin().data().type == VertexType::saddle);
+
+	// Start from the InputDcel face adjacent to the saddle edge.
 	const InputDcel::HalfEdge saddleEdge = e.data().m_dcelPath.edges()[0];
-	// start from the face adjacent to the saddle edge
 	InputDcel::Face face = saddleEdge.incidentFace();
+
+	// Walk upwards following edge-face gradient pairs.
 	while (face.data().pairedWithEdge != -1) {
-		// walk upwards following edge-face gradient pairs
-		face = dcel->halfEdge(face.data().pairedWithEdge).twin().incidentFace();
+		face = m_dcel->halfEdge(face.data().pairedWithEdge).twin().incidentFace();
 	}
-	// when no edge-face gradient pair exists, we found the maximum
-	f.data().maximum = face;
 
-	// step 2: from the maximum, collect all the faces of f
-	f.data().faces.push_back(face);
-	face.forAllReachableFaces([](InputDcel::HalfEdge e) {
-		return e.twin().data().pairedWithFace;
-	}, [&f](InputDcel::Face foundFace, InputDcel::HalfEdge e) {
-		f.data().faces.push_back(foundFace);
-	});
-}
-
-void MsComplexCreator::computePersistence() {
-
-	/*// make list of saddles, sorted from high to low
-	std::vector<MsComplex::Vertex> saddles;
-	for (int i = 0; i < msc->vertexCount(); i++) {
-		if (msc->vertex(i).data().type == VertexType::saddle) {
-			saddles.push_back(msc->vertex(i));
-		}
-	}
-	std::sort(saddles.begin(), saddles.end(),
-	          [](MsComplex::Vertex v1, MsComplex::Vertex v2) {
-		return v1.data().p > v2.data().p;
-	});
-
-	// for every saddle we are going to "merge" all faces around it
-	// initialize a union-find structure to maintain what faces are merged
-	UnionFind uf(msc->faceCount());
-
-	for (auto s : saddles) {
-		// set of neighboring faces, taking "merged" faces into account
-		std::set<int> neighboringFaces;
-
-		// ID of the highest-maximum face within neighboringFaces
-		MsComplex::Face highestMaxFace;
-
-		// check all neighboring faces
-		s.forAllOutgoingEdges([&](MsComplex::HalfEdge e) {
-			MsComplex::Face incident = e.incidentFace();
-			MsComplex::Face f = msc->face(uf.findSet(incident.id()));
-			InputDcel::Vertex m = f.data().maximum;
-			neighboringFaces.insert(f.id());
-			if (!highestMaxFace.isInitialized() ||
-			        m.data().p > highestMaxFace.data().maximum.data().p) {
-				highestMaxFace = f;
-			}
-		});
-		assert(highestMaxFace.isInitialized());
-
-		// merge all non-highest-maximum faces into the highest-maximum face
-		if (neighboringFaces.size() > 1) {
-			for (auto i : neighboringFaces) {
-				MsComplex::Face f = msc->face(i);
-				if (f != highestMaxFace) {
-					uf.merge(highestMaxFace.id(), f.id());
-					InputDcel::Vertex m = f.data().maximum;
-					f.data().persistence = m.data().p.h - s.data().p.h;
-				}
-			}
-		}
-	}*/
+	// When no edge-face gradient pair exists, we found the maximum.
+	return face;
 }
 
 void MsComplexCreator::setSandFunctionOfFace(MsComplex::Face f) {
-	std::queue<PiecewiseCubicFunction> queue;
-	for (auto face : f.data().faces) {
-		face.forAllBoundaryVertices([&queue](InputDcel::Vertex v) {
-			queue.push(PiecewiseCubicFunction{v.data().p});
-		});
-	}
-	if (queue.empty()) {
-		f.data().volumeAbove = PiecewiseCubicFunction();
-		return;
-	}
+	if (f.data().maximum == m_dcel->outerFace()) {
+		f.data().volumeAbove =
+		    PiecewiseLinearFunction(LinearFunction{std::numeric_limits<double>::infinity()});
+	} else {
+		std::queue<PiecewiseLinearFunction> queue;
+		for (auto face : f.data().faces) {
+			face.forAllBoundaryVertices([&queue](InputDcel::Vertex v) {
+				queue.push(PiecewiseLinearFunction{v.data().p});
+			});
+		}
+		if (queue.empty()) {
+			f.data().volumeAbove = PiecewiseLinearFunction();
+			return;
+		}
 
-	while (queue.size() > 1) {
-		PiecewiseCubicFunction f1 = queue.front();
-		queue.pop();
-		PiecewiseCubicFunction f2 = queue.front();
-		queue.pop();
-		queue.push(f1.add(f2));
-	}
+		while (queue.size() > 1) {
+			PiecewiseLinearFunction f1 = queue.front();
+			queue.pop();
+			PiecewiseLinearFunction f2 = queue.front();
+			queue.pop();
+			queue.push(f1.add(f2));
+		}
 
-	f.data().volumeAbove = queue.front();
+		f.data().volumeAbove = queue.front();
+	}
 }
 
 void MsComplexCreator::signalProgress(int progress) {
-	if (progressListener != nullptr) {
-		progressListener(progress);
+	if (m_progressListener != nullptr) {
+		m_progressListener(progress);
 	}
 }

@@ -26,9 +26,27 @@ class MsVertex {
 		VertexType type;
 
 		/**
-		 * The corresponding vertex in the InputDcel.
+		 * The corresponding simplex in the InputDcel.
 		 */
-	    std::variant<InputDcel::Vertex, InputDcel::HalfEdge, InputDcel::Face> inputDcelSimplex;
+		std::variant<InputDcel::Vertex, InputDcel::HalfEdge, InputDcel::Face> inputDcelSimplex;
+
+		/**
+		 * The outgoing edge of this vertex which is incident to the "heavy
+		 * side" of this vertex, i.e., the side with the highest volume. Only
+		 * for saddles; computed by the MsComplexSimplifier.
+		 */
+		int m_heaviestSide = -1;
+
+		/**
+		 * Whether this saddle has an edge to the vertex representing the global minimum.
+		 */
+		bool isBoundarySaddle = false;
+
+		/**
+		 * Prints the coordinate and type of this vertex data, for debugging
+		 * purposes (see \ref Dcel::output(std::ostream&)).
+		 */
+		void output(std::ostream& out);
 };
 
 /**
@@ -52,6 +70,12 @@ class MsHalfEdge {
 		 * simplification.
 		 */
 		double m_delta;
+
+		/**
+		 * Prints the first vertex of `m_dcelPath`, for debugging purposes (see
+		 * \ref Dcel::output(std::ostream&)).
+		 */
+		void output(std::ostream& out);
 };
 
 /**
@@ -64,13 +88,16 @@ class MsFace {
 	public:
 
 		/**
-		 * The maximum inside this face in the InputDcel.
+		 * The maximum inside this face in the InputDcel. If this face contains
+		 * an impermeable boundary region (which implies that the maximum is the
+		 * implicit +∞ outer face), `maximum` is the InputDcel's outer face.
 		 */
 		InputDcel::Face maximum;
 
 		/**
 		 * A list of faces within a Morse-Smale cell, given as IDs in the
-		 * InputDcel.
+		 * InputDcel. If `maximum` is the InputDcel's outer face, then this is
+		 * an empty list.
 		 */
 		std::vector<InputDcel::Face> faces;
 
@@ -79,7 +106,13 @@ class MsFace {
 		 * `volumeAbove(h)` returns the volume of sand within this face that is
 		 * above the horizontal plane at height _h_.
 		 */
-		PiecewiseCubicFunction volumeAbove;
+		PiecewiseLinearFunction volumeAbove;
+
+		/**
+		 * Prints some information about this face data, for debugging purposes
+		 * (see \ref Dcel::output(std::ostream&)).
+		 */
+		void output(std::ostream& out);
 };
 
 /**
