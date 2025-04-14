@@ -1,7 +1,7 @@
 TopoTide: Topological Tools for Network Extraction
 =======================================================
 
-![The TopoTide logo](https://github.com/user-attachments/assets/61066d74-6dda-4808-ba82-e8fbc91d6ead)
+![The TopoTide logo](https://github.com/user-attachments/assets/cc91b284-6fbd-4738-bae2-4e5e02057930)
 
 [![DOI](https://zenodo.org/badge/204456296.svg)](https://zenodo.org/badge/latestdoi/204456296)
 
