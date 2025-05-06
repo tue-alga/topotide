@@ -21,13 +21,13 @@
 #include <cmath>
 #include <limits>
 #include <optional>
-#include <qopengltexture.h>
 #include <vector>
 
 #include "riverwidget.h"
 
 #include "boundary.h"
 #include "boundarycreator.h"
+#include "heightmap.h"
 
 RiverWidget::RiverWidget() {
 	QSurfaceFormat format;
@@ -49,23 +49,24 @@ void RiverWidget::mouseMoveEvent(QMouseEvent* event) {
 	}
 
 	QPointF converted = inverseConvertPoint(event->pos());
+	mousePos = Point(converted.x(), converted.y(), 0);
 	auto x = static_cast<int>(converted.x() + 0.5);
 	auto y = static_cast<int>(converted.y() + 0.5);
-	mousePos = Point(x, y, 0);
-	mouseInBounds = m_riverFrame->m_heightMap.isInBounds(x, y);
+	mouseCoordinate = HeightMap::Coordinate(x, y);
+	mouseInBounds = m_riverFrame->m_heightMap.isInBounds(mouseCoordinate);
 	if (mouseInBounds) {
-		hoveredCoordinateChanged(HeightMap::Coordinate{x, y},
+		hoveredCoordinateChanged(mouseCoordinate,
 		                         (float) m_riverFrame->m_heightMap.elevationAt(x, y));
 	} else {
 		emit mouseLeft();
 	}
 
-	if (m_dragging) {
+	if (m_mouseDown) {
+		m_dragging = true;
+		setCursor(Qt::ClosedHandCursor);
 		if (m_mode == Mode::EDIT_BOUNDARY && m_draggedVertex.has_value()) {
-			HeightMap::Coordinate newPosition{static_cast<int>(mousePos.x),
-			                                  static_cast<int>(mousePos.y)};
-			newPosition = m_riverFrame->m_heightMap.clampToBounds(newPosition);
-			m_boundaryToEdit.movePoint(*m_draggedVertex, newPosition);
+			HeightMap::Coordinate newCoordinate = m_riverFrame->m_heightMap.clampToBounds(mouseCoordinate);
+			m_boundaryToEdit.movePoint(*m_draggedVertex, newCoordinate);
 		} else {
 			QPointF delta = event->pos() - m_previousMousePos;
 			QTransform translation;
@@ -83,12 +84,11 @@ void RiverWidget::mousePressEvent(QMouseEvent* event) {
 		return;
 	}
 
-	m_dragging = true;
+	m_mouseDown = true;
 
 	if (m_mode == Mode::GENERATE_BOUNDARY_SEED) {
 		if (mouseInBounds) {
-			HeightMap::Coordinate seed(static_cast<int>(mousePos.x), static_cast<int>(mousePos.y));
-			m_boundaryCreator->setSeed(seed);
+			m_boundaryCreator->setSeed(mouseCoordinate);
 			if (m_boundaryCreator->getPath()) {
 				m_boundaryToEdit = Boundary(*m_boundaryCreator->getPath());
 				m_mode = Mode::SET_SOURCE_START;
@@ -130,19 +130,14 @@ void RiverWidget::mousePressEvent(QMouseEvent* event) {
 		if (!m_draggedVertex.has_value()) {
 			std::optional<int> newMidpoint = hoveredBoundaryMidpoint();
 			if (newMidpoint.has_value()) {
-				HeightMap::Coordinate c1 = path.m_points[*newMidpoint];
-				HeightMap::Coordinate c2 = path.m_points[*newMidpoint + 1];
-				HeightMap::Coordinate midP((c1.m_x + c2.m_x) / 2,
-				                           (c1.m_y + c2.m_y) / 2);
-				m_boundaryToEdit.insertPoint(*newMidpoint + 1, midP);
+				m_boundaryToEdit.insertPoint(*newMidpoint + 1, mouseCoordinate);
 				m_draggedVertex = *newMidpoint + 1;
+				m_dragging = true;
 			}
 		}
 	}
 
-	setCursor(Qt::ClosedHandCursor);
 	m_previousMousePos = event->pos();
-
 	update();
 }
 
@@ -151,6 +146,14 @@ void RiverWidget::mouseReleaseEvent(QMouseEvent*) {
 		return;
 	}
 
+	if (m_mode == Mode::EDIT_BOUNDARY) {
+		if (!m_dragging && m_draggedVertex.has_value()) {
+			m_boundaryToEdit.removePoint(*m_draggedVertex);
+			update();
+		}
+	}
+
+	m_mouseDown = false;
 	m_dragging = false;
 	setCursor(Qt::ArrowCursor);
 	m_draggedVertex = std::nullopt;
@@ -197,7 +200,7 @@ void RiverWidget::wheelEvent(QWheelEvent* event) {
 }
 
 void RiverWidget::initializeGL() {
-	gl = QOpenGLVersionFunctionsFactory::get<QOpenGLFunctions_3_0>(
+	gl = QOpenGLVersionFunctionsFactory::get<QOpenGLFunctions_4_5_Core>(
 		QOpenGLContext::currentContext());
 	gl->initializeOpenGLFunctions();
 	updateTexture();
@@ -265,6 +268,10 @@ void RiverWidget::paintGL() {
 
 	// initialize shader variables
 	program->bind();
+	program->enableAttributeArray("vertex");
+	std::array<float, 12> vertices = {-1, -1, 1, -1, 1,  1,
+									-1, -1, 1, 1,  -1, 1};
+	program->setAttributeArray("vertex", vertices.data(), 2);
 	program->setUniformValue(
 	    "waterLevel", (float) ((m_waterLevel - m_riverData->minimumElevation()) /
 	                           (m_riverData->maximumElevation() - m_riverData->minimumElevation())));
@@ -307,12 +314,7 @@ void RiverWidget::paintGL() {
 	program->setUniformValue("matrix", transform);
 
 	if (m_drawBackground) {
-		gl->glBegin(GL_QUADS);
-		gl->glVertex2d(-1, -1);
-		gl->glVertex2d(1, -1);
-		gl->glVertex2d(1, 1);
-		gl->glVertex2d(-1, 1);
-		gl->glEnd();
+		gl->glDrawArrays(GL_TRIANGLES, 0, 6);
 	} else {
 		p.fillRect(rect(), QColor(255, 255, 255));
 	}
@@ -324,8 +326,7 @@ void RiverWidget::paintGL() {
 
 	if (m_mode == Mode::GENERATE_BOUNDARY_SEED) {
 		if (mouseInBounds) {
-			HeightMap::Coordinate seed(static_cast<int>(mousePos.x), static_cast<int>(mousePos.y));
-			m_boundaryCreator->setSeed(seed);
+			m_boundaryCreator->setSeed(mouseCoordinate);
 			std::optional<Path> path = m_boundaryCreator->getPath();
 			if (path) {
 				p.setPen(QPen(QBrush(EDITABLE_BOUNDARY_COLOR), 2));
@@ -415,7 +416,7 @@ void RiverWidget::paintGL() {
 		}
 
 		if (mouseInBounds) {
-			QPointF p2 = convertPoint(mousePos);
+			QPointF p2 = convertPoint(mouseCoordinate);
 			p.setPen(Qt::NoPen);
 			p.setBrush(QColor{"#238b45"});
 			p.drawEllipse(p2, 4, 4);
@@ -1116,6 +1117,10 @@ QPointF RiverWidget::convertPoint(Point p) const {
 	return convertPoint(p.x, p.y);
 }
 
+QPointF RiverWidget::convertPoint(HeightMap::Coordinate c) const {
+	return convertPoint(c.m_x, c.m_y);
+}
+
 QPointF RiverWidget::convertPoint(double x, double y) const {
 	QPointF mapped = m_transform.map(
 	    QPointF(x + 0.5, y + 0.5) -
@@ -1132,18 +1137,6 @@ QPointF RiverWidget::inverseConvertPoint(QPointF p) const {
 	return m_transform.inverted().map(toMap) +
 	       QPointF(m_riverFrame->m_heightMap.width(), m_riverFrame->m_heightMap.height()) / 2 -
 	       QPointF(0.5, 0.5);
-}
-
-int RiverWidget::hoveredMsVertex(MsComplex& msComplex) const {
-
-	for (int i = 0; i < msComplex.vertexCount(); i++) {
-		MsComplex::Vertex v = msComplex.vertex(i);
-		if (v.data().p.x == mousePos.x && v.data().p.y == mousePos.y) {
-			return v.id();
-		}
-	}
-
-	return -1;
 }
 
 std::optional<int> RiverWidget::hoveredPathVertex(const Path& p) const {
@@ -1414,7 +1407,7 @@ void RiverWidget::startSetSourceSinkMode() {
 void RiverWidget::startBoundaryEditMode() {
 	m_mode = Mode::EDIT_BOUNDARY;
 	m_boundaryToEdit = Boundary{m_riverData->boundary()};
-	emit statusMessage("Drag points to edit the boundary; drag from the middle of an edge to add a point");
+	emit statusMessage("Drag points to edit the boundary; click the middle of an edge to add a point; click a point to remove it");
 	update();
 }
 

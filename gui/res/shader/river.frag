@@ -86,7 +86,7 @@ in vec4 pos;
 /**
  * The computed color.
  */
-out vec3 color;
+out vec4 color;
 
 vec2 texCoord(vec2 p) {
 	return (matrix * vec3(p.x, p.y, 1)).xy;
@@ -141,17 +141,17 @@ void main() {
 	bool isNoData = texture(tex, tPos).a < 1.0f;
 
 	if (!inBounds || isNoData) {
-		color = vec3(1);
+		color = vec4(1);
 		return;
 	}
 
 	float height = elevation(pos.xy);
 	if (showWaterPlane && waterLevel > height) {
-		color = waterColor(waterLevel - height);
+		color = vec4(waterColor(waterLevel - height), 1);
 	} else if (showMap) {
-		color = texture(elevationRampTex, vec2(height, 0)).rgb;
+		color = vec4(texture(elevationRampTex, vec2(height, 0)).rgb, 1);
 	} else {
-		color = vec3(1);
+		color = vec4(1);
 	}
 
 	if (showShading) {
@@ -163,19 +163,19 @@ void main() {
 			texture2D(tex, texCoord(pos.xy) - offset).r
 			);
 		brightness = min(2, brightness);
-		color *= brightness + 1;
+		color.rgb *= brightness + 1;
 	}
 
 	if (showOutlines) {
 		if (isOnPeriodicContour(pos.xy)) {
-			color = color * 0.8;
+			color.rgb *= 0.8;
 		}
 	}
 
 	// draw black lines between water and land
 	if (showWaterPlane) {
 		if (isOnContour(pos.xy, waterLevel)) {
-			color = color * 0.5;
+			color.rgb *= 0.5;
 		}
 	}
 
@@ -183,9 +183,9 @@ void main() {
 	bool onContourMask = texture(contourMaskTex, tPos - vec2(.5 / texWidth, .5 / texHeight)).r > 0.5;
 	// debug: draw mask
 	//if (onContourMask && int(gl_FragCoord.x) % 2 == int(gl_FragCoord.y) % 2) {
-	//	color = vec3(1, 0, 0);
+	//	color = vec4(1, 0, 0, 1);
 	//}
 	if (isOnContour(pos.xy, contourLevel) && onContourMask) {
-		color = vec3(0.137, 0.545, 0.271);
+		color = vec4(0.137, 0.545, 0.271, 1);
 	}
 }

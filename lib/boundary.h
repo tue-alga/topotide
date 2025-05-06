@@ -42,6 +42,8 @@ class Boundary {
 		void movePoint(int index, HeightMap::Coordinate c);
 		/// Inserts a point at the given index at the given coordinate.
 		void insertPoint(int index, HeightMap::Coordinate c);
+		/// Removes the point at the given index.
+		void removePoint(int index);
 
 		/**
 		 * A part of the boundary. \ref m_start is considered to be in clockwise

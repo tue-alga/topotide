@@ -4,7 +4,7 @@
 #include <QDragMoveEvent>
 #include <QEvent>
 #include <QMouseEvent>
-#include <QOpenGLFunctions_3_0>
+#include <QOpenGLFunctions_4_5_Core>
 #include <QOpenGLShaderProgram>
 #include <QOpenGLTexture>
 #include <QOpenGLWidget>
@@ -173,9 +173,9 @@ class RiverWidget : public QOpenGLWidget {
 		void drawFingers(QPainter& p, const std::vector<InputDcel::Path>& fingers) const;
 		QPolygonF polygonForMsFace(MsComplex::Face f) const;
 		QPointF convertPoint(Point p) const;
+		QPointF convertPoint(HeightMap::Coordinate c) const;
 		QPointF convertPoint(double x, double y) const;
 		QPointF inverseConvertPoint(QPointF p) const;
-		int hoveredMsVertex(MsComplex& msComplex) const;
 		std::optional<int> hoveredPathVertex(const Path& p) const;
 		std::optional<int> hoveredNonPermeableBoundaryVertex(const Boundary& b) const;
 
@@ -200,7 +200,7 @@ class RiverWidget : public QOpenGLWidget {
 		QOpenGLTexture* elevationRampTexture = nullptr;
 		/// texture that masks where the contour is shown (black = not shown, white = shown)
 		QOpenGLTexture* contourMaskTexture = nullptr;
-		QOpenGLFunctions_3_0* gl;
+		QOpenGLFunctions_4_5_Core* gl;
 
 		ColorRamp m_colorRamp;
 		double m_waterLevel = 0;
@@ -229,7 +229,12 @@ class RiverWidget : public QOpenGLWidget {
 
 		bool mouseInBounds = false;
 		Point mousePos;
+		HeightMap::Coordinate mouseCoordinate{0, 0};
 		QPointF m_previousMousePos;
+		/// Whether the left mouse button is pressed.
+		bool m_mouseDown = false;
+		/// Whether the left mouse button is pressed and the mouse has moved
+		/// since it became pressed.
 		bool m_dragging = false;
 
 		Units m_units;

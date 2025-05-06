@@ -4,31 +4,56 @@
         <file>res/shader/river.frag</file>
         <file>res/images/saddles.png</file>
         <file>res/images/saddles-big.png</file>
-        <file>res/icons/compass.svg</file>
-        <file>res/icons/document-open.svg</file>
-        <file>res/icons/draw-freehand.svg</file>
-        <file>res/icons/games-hint.svg</file>
-        <file>res/icons/color-gradient.svg</file>
-        <file>res/icons/application-exit.svg</file>
-        <file>res/icons/fill-color.svg</file>
-        <file>res/icons/topotide.svg</file>
-        <file>res/icons/topotide-background.svg</file>
         <file>res/images/662-200px.png</file>
         <file>res/images/662-400px.png</file>
         <file>res/images/662-original.png</file>
         <file>res/images/662-800px.png</file>
-        <file>res/icons/document-save.svg</file>
-        <file>res/icons/go-next.svg</file>
-        <file>res/icons/go-previous.svg</file>
-        <file>res/icons/zoom-fit-best.svg</file>
-        <file>res/icons/zoom-in.svg</file>
-        <file>res/icons/zoom-out.svg</file>
-        <file>res/icons/run-build.svg</file>
-        <file>res/icons/run-build-configure.svg</file>
-        <file>res/icons/document-export.svg</file>
-        <file>res/icons/document-close.svg</file>
-        <file>res/icons/edit-reset.svg</file>
-        <file>res/icons/autocorrection.svg</file>
         <file>res/ipe/style.xml</file>
+        <file>res/icons/topotide-background.svg</file>
+        <file>res/icons/16/application-exit.svg</file>
+        <file>res/icons/16/autocorrection.svg</file>
+        <file>res/icons/16/compass.svg</file>
+        <file>res/icons/16/document-close.svg</file>
+        <file>res/icons/16/document-export.svg</file>
+        <file>res/icons/16/document-open.svg</file>
+        <file>res/icons/16/document-save.svg</file>
+        <file>res/icons/16/draw-path.svg</file>
+        <file>res/icons/16/edit-reset.svg</file>
+        <file>res/icons/16/run-build.svg</file>
+        <file>res/icons/16/run-build-configure.svg</file>
+        <file>res/icons/16/topotide.svg</file>
+        <file>res/icons/16/zoom-fit-best.svg</file>
+        <file>res/icons/16/zoom-in.svg</file>
+        <file>res/icons/16/zoom-out.svg</file>
+        <file>res/icons/22/application-exit.svg</file>
+        <file>res/icons/22/autocorrection.svg</file>
+        <file>res/icons/22/compass.svg</file>
+        <file>res/icons/22/document-close.svg</file>
+        <file>res/icons/22/document-export.svg</file>
+        <file>res/icons/22/document-open.svg</file>
+        <file>res/icons/22/document-save.svg</file>
+        <file>res/icons/22/draw-path.svg</file>
+        <file>res/icons/22/edit-reset.svg</file>
+        <file>res/icons/22/run-build.svg</file>
+        <file>res/icons/22/run-build-configure.svg</file>
+        <file>res/icons/22/topotide.svg</file>
+        <file>res/icons/22/zoom-fit-best.svg</file>
+        <file>res/icons/22/zoom-in.svg</file>
+        <file>res/icons/22/zoom-out.svg</file>
+        <file>res/icons/24/application-exit.svg</file>
+        <file>res/icons/24/autocorrection.svg</file>
+        <file>res/icons/24/compass.svg</file>
+        <file>res/icons/24/document-close.svg</file>
+        <file>res/icons/24/document-export.svg</file>
+        <file>res/icons/24/document-open.svg</file>
+        <file>res/icons/24/document-save.svg</file>
+        <file>res/icons/24/draw-path.svg</file>
+        <file>res/icons/24/edit-reset.svg</file>
+        <file>res/icons/24/run-build.svg</file>
+        <file>res/icons/24/run-build-configure.svg</file>
+        <file>res/icons/24/topotide.svg</file>
+        <file>res/icons/24/zoom-fit-best.svg</file>
+        <file>res/icons/24/zoom-in.svg</file>
+        <file>res/icons/24/zoom-out.svg</file>
     </qresource>
 </RCC>

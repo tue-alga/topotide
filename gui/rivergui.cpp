@@ -239,21 +239,18 @@ void RiverGui::createActions() {
 #endif
 
 	showInputDcelAction = new QAction("Show &gradient pairs", this);
-	showInputDcelAction->setIcon(UiHelper::createIcon("color-gradient"));
 	showInputDcelAction->setToolTip("Show or hide the gradient pairs");
 	showInputDcelAction->setCheckable(true);
 	showInputDcelAction->setChecked(false);
 	connect(showInputDcelAction, &QAction::toggled, map, &RiverWidget::setShowInputDcel);
 
 	drawGradientPairsAsTreesAction = new QAction("As trees", this);
-	drawGradientPairsAsTreesAction->setIcon(UiHelper::createIcon("color-gradient"));
 	drawGradientPairsAsTreesAction->setToolTip("Draws the gradient pairs as trees instead of arrows");
 	drawGradientPairsAsTreesAction->setCheckable(true);
 	drawGradientPairsAsTreesAction->setChecked(false);
 	connect(drawGradientPairsAsTreesAction, &QAction::toggled, map, &RiverWidget::setDrawGradientPairsAsTrees);
 
 	showCriticalPointsAction = new QAction("Show &critical points", this);
-	showCriticalPointsAction->setIcon(UiHelper::createIcon("color-gradient"));
 	showCriticalPointsAction->setToolTip("Show or hide the critical points");
 	showCriticalPointsAction->setCheckable(true);
 	showCriticalPointsAction->setChecked(false);
@@ -261,7 +258,6 @@ void RiverGui::createActions() {
 
 #ifdef EXPERIMENTAL_FINGERS_SUPPORT
 	showSpursAction = new QAction("Show spurs", this);
-	showSpursAction->setIcon(UiHelper::createIcon("color-gradient"));
 	showSpursAction->setToolTip("Show or hide the spurs used in the finger computation");
 	showSpursAction->setCheckable(true);
 	showSpursAction->setChecked(false);
@@ -269,28 +265,24 @@ void RiverGui::createActions() {
 #endif
 
 	showMsComplexAction = new QAction("Show &MS complex", this);
-	showMsComplexAction->setIcon(UiHelper::createIcon("color-gradient"));
 	showMsComplexAction->setToolTip("Show or hide the Morse-Smale complex");
 	showMsComplexAction->setCheckable(true);
 	showMsComplexAction->setChecked(false);
 	connect(showMsComplexAction, &QAction::toggled, map, &RiverWidget::setShowMsComplex);
 
 	showNetworkAction = new QAction("Show &network", this);
-	showNetworkAction->setIcon(UiHelper::createIcon("color-gradient"));
 	showNetworkAction->setToolTip("Show or hide the generated network");
 	showNetworkAction->setCheckable(true);
 	showNetworkAction->setChecked(true);
 	connect(showNetworkAction, &QAction::toggled, map, &RiverWidget::setShowNetwork);
 
 	msEdgesStraightAction = new QAction("&Straight MS edges", this);
-	msEdgesStraightAction->setIcon(UiHelper::createIcon("color-gradient"));
 	msEdgesStraightAction->setToolTip("Draw MS edges as straight lines");
 	msEdgesStraightAction->setCheckable(true);
 	msEdgesStraightAction->setChecked(false);
 	connect(msEdgesStraightAction, &QAction::toggled, map, &RiverWidget::setMsEdgesStraight);
 
 	showNetworkAction = new QAction("Show &network", this);
-	showNetworkAction->setIcon(UiHelper::createIcon("color-gradient"));
 	showNetworkAction->setToolTip("Show or hide the generated network");
 	showNetworkAction->setCheckable(true);
 	showNetworkAction->setChecked(true);
@@ -298,7 +290,6 @@ void RiverGui::createActions() {
 
 #ifdef EXPERIMENTAL_FINGERS_SUPPORT
 	showFingersAction = new QAction("Show &fingers", this);
-	showFingersAction->setIcon(UiHelper::createIcon("color-gradient"));
 	showFingersAction->setToolTip("Show or hide the generated fingers");
 	showFingersAction->setCheckable(true);
 	showFingersAction->setChecked(true);
@@ -306,7 +297,7 @@ void RiverGui::createActions() {
 #endif
 
 	editBoundaryAction = new QAction("&Edit boundary", this);
-	editBoundaryAction->setIcon(UiHelper::createIcon("draw-freehand"));
+	editBoundaryAction->setIcon(UiHelper::createIcon("draw-path"));
 	editBoundaryAction->setCheckable(true);
 	editBoundaryAction->setToolTip("Delineate the part of the river to be analyzed, by drawing a boundary");
 	connect(editBoundaryAction, &QAction::toggled, [&] {

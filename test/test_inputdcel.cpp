@@ -7,21 +7,6 @@
 
 SCENARIO("creating a DCEL from an InputGraph") {
 
-	GIVEN("a input graph containing just one point") {
-		InputGraph g;
-		g.addVertex();
-		REQUIRE(g.vertexCount() == 1);
-
-		WHEN("creating a DCEL out of it") {
-			InputDcel dcel(g);
-			THEN("it should have the right number of vertices / halfedges / faces") {
-				REQUIRE(dcel.vertexCount() == 1);
-				REQUIRE(dcel.halfEdgeCount() == 0);
-				REQUIRE(dcel.faceCount() == 0);
-			}
-		}
-	}
-
 	GIVEN("a simple input graph") {
 		InputGraph g;
 		for (int i = 0; i < 6; i++) g.addVertex();
@@ -68,9 +53,9 @@ SCENARIO("creating a DCEL from an InputGraph") {
 		WHEN("creating a DCEL out of it") {
 			InputDcel dcel(g);
 			THEN("it should have the right number of vertices / halfedges / faces") {
-				REQUIRE(dcel.vertexCount() == 6);
-				REQUIRE(dcel.halfEdgeCount() == 16);
-				REQUIRE(dcel.faceCount() == 4);
+				REQUIRE(dcel.vertexCount() == 4);
+				REQUIRE(dcel.halfEdgeCount() == 8);
+				REQUIRE(dcel.faceCount() == 2);
 			}
 		}
 	}

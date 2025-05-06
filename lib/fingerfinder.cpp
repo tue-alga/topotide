@@ -43,11 +43,11 @@ std::vector<InputDcel::Path> FingerFinder::findFingers() {
 						}
 						return e.data().pairedWithFace || e.twin().data().pairedWithFace;
 					},
-					[&outcropFaces = face.data().spurFaces](InputDcel::Face f, InputDcel::HalfEdge) {
-						outcropFaces.push_back(f.id());
+					[&spurFaces = face.data().spurFaces](InputDcel::Face f, InputDcel::HalfEdge) {
+						spurFaces.push_back(f.id());
 					});
-				computeSpurBoundary(topEdgeResult.first, face.data().outcropBoundary);
-				face.data().outcropBoundary.push_back(topEdgeResult.first.origin().id());
+				computeSpurBoundary(topEdgeResult.first, face.data().spurBoundary);
+				face.data().spurBoundary.push_back(topEdgeResult.first.origin().id());
 			}
 		}
 	}
@@ -76,7 +76,7 @@ std::vector<InputDcel::Path> FingerFinder::findFingers() {
 		InputDcel::Face face = m_dcel->face(i);
 		if (m_dcel->isRedLeaf(face) && face.data().isSignificant) {
 			double flankingHeight = face.data().flankingHeight;
-			std::vector<int> boundary = face.data().outcropBoundary;
+			std::vector<int> boundary = face.data().spurBoundary;
 			int startIndex = -1;
 			for (int i = 0; i < boundary.size(); i++) {
 				if (m_dcel->vertex(boundary[i]).data().p.h < flankingHeight) {

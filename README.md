@@ -50,7 +50,7 @@ On Ubuntu, install the dependencies from the repository:
 
 ```sh
 sudo apt install build-essential cmake
-sudo apt install qt6-base-dev
+sudo apt install qt6-base-dev qt6-svg-dev
 sudo apt install libgdal-dev
 ```
 </details>

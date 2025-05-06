@@ -20,6 +20,6 @@ add_executable(topotide
 	resources.qrc
 )
 target_link_libraries(topotide PRIVATE topotidelib)
-target_link_libraries(topotide PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets)
+target_link_libraries(topotide PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets Qt6::Svg)
 
 install(TARGETS topotide DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)

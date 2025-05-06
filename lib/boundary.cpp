@@ -49,6 +49,24 @@ void Boundary::insertPoint(int index, HeightMap::Coordinate c) {
 	}
 }
 
+void Boundary::removePoint(int index) {
+	assert(index <= m_path.m_points.size());
+	if (index == 0 || index == m_path.m_points.size()) {
+		m_path.m_points.erase(m_path.m_points.begin());
+		m_path.m_points.back() = m_path.m_points.front();
+	} else {
+		m_path.m_points.erase(m_path.m_points.begin() + index);
+	}
+	for (Region& region : m_permeableRegions) {
+		if (region.m_start > index) {
+			region.m_start--;
+		}
+		if (region.m_end > index) {
+			region.m_end--;
+		}
+	}
+}
+
 void Boundary::addPermeableRegion(Region region) {
 	m_permeableRegions.push_back(region);
 }
